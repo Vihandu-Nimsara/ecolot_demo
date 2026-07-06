@@ -1,0 +1,294 @@
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #eef8f5;
+    color: #1f2933;
+}
+
+.container {
+    width: min(1100px, 92%);
+    margin: 0 auto;
+}
+
+.main-header {
+    background: #0f766e;
+    color: white;
+    padding: 16px 0;
+}
+
+.nav-wrapper {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.brand {
+    color: white;
+    text-decoration: none;
+    font-size: 24px;
+    font-weight: bold;
+}
+
+nav a {
+    color: white;
+    text-decoration: none;
+    margin-left: 18px;
+    font-weight: 600;
+}
+
+.hero-card,
+.form-card {
+    background: white;
+    margin-top: 40px;
+    padding: 32px;
+    border-radius: 16px;
+    box-shadow: 0 10px 30px rgba(15, 118, 110, 0.12);
+}
+
+.hero-card h1,
+.form-card h1 {
+    margin-top: 0;
+    color: #0f766e;
+}
+
+.button-row {
+    margin-top: 24px;
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.btn {
+    display: inline-block;
+    background: #0f766e;
+    color: white;
+    padding: 12px 18px;
+    border-radius: 10px;
+    text-decoration: none;
+    border: none;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.btn.secondary {
+    background: #334155;
+}
+
+.success-box {
+    margin-top: 20px;
+    padding: 14px;
+    background: #dcfce7;
+    border: 1px solid #86efac;
+    border-radius: 10px;
+    color: #166534;
+}
+
+.form-group {
+    margin-bottom: 18px;
+}
+
+label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: bold;
+}
+
+input {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    font-size: 16px;
+}
+
+.muted {
+    color: #64748b;
+}
+
+.main-footer {
+    margin-top: 60px;
+    padding: 24px 0;
+    text-align: center;
+    color: #64748b;
+}
+
+select,
+textarea {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    font-size: 16px;
+    font-family: inherit;
+}
+
+textarea {
+    min-height: 100px;
+    resize: vertical;
+}
+
+.large-form {
+    max-width: 900px;
+}
+
+.grid-2 {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+}
+
+.role-fields {
+    margin-top: 24px;
+    padding: 20px;
+    border: 1px solid #d9f3ee;
+    background: #f8fffd;
+    border-radius: 14px;
+}
+
+.role-fields h2 {
+    margin-top: 0;
+    font-size: 20px;
+    color: #0f766e;
+}
+
+.alert {
+    padding: 14px;
+    border-radius: 10px;
+    margin-bottom: 18px;
+}
+
+.alert-success {
+    background: #dcfce7;
+    border: 1px solid #86efac;
+    color: #166534;
+}
+
+.alert-danger {
+    background: #fee2e2;
+    border: 1px solid #fca5a5;
+    color: #991b1b;
+}
+
+.error-text {
+    display: block;
+    color: #dc2626;
+    margin-top: 6px;
+    font-size: 14px;
+}
+
+.form-link {
+    margin-top: 18px;
+}
+
+.form-link a {
+    color: #0f766e;
+    font-weight: bold;
+}
+
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+    margin-top: 24px;
+}
+
+.dashboard-card {
+    background: #eef8f5;
+    border: 1px solid #ccebe5;
+    padding: 24px;
+    border-radius: 14px;
+    font-weight: bold;
+    color: #0f766e;
+}
+
+@media (max-width: 768px) {
+    .grid-2,
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .nav-wrapper {
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    nav a {
+        margin-left: 10px;
+        margin-right: 10px;
+    }
+}
+
+.info-box {
+    background: #ecfeff;
+    border: 1px solid #a5f3fc;
+    padding: 16px;
+    border-radius: 12px;
+    margin: 18px 0;
+    color: #155e75;
+}
+
+.item-row {
+    background: #f8fffd;
+    border: 1px solid #d9f3ee;
+    padding: 18px;
+    border-radius: 14px;
+    margin-bottom: 18px;
+}
+
+.btn.danger {
+    background: #dc2626;
+}
+
+button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.link-card {
+    display: block;
+    text-decoration: none;
+}
+
+.table-wrapper {
+    overflow-x: auto;
+    margin-top: 24px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+}
+
+th,
+td {
+    padding: 14px;
+    border-bottom: 1px solid #e2e8f0;
+    text-align: left;
+    vertical-align: top;
+}
+
+th {
+    background: #f1f5f9;
+    color: #0f766e;
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: #e0f2fe;
+    color: #075985;
+    font-size: 13px;
+    font-weight: bold;
+}
+
+hr {
+    border: none;
+    border-top: 1px solid #e2e8f0;
+    margin: 28px 0;
+}
