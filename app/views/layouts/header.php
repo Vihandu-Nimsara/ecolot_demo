@@ -23,7 +23,6 @@ $municipalNavItems = [
     ['label' => 'Collection Records', 'path' => 'municipal-officer/pickup-records/pending'],
     ['label' => 'E-Lots', 'path' => 'municipal-officer/elots'],
     ['label' => 'Feedback', 'path' => 'municipal-officer/feedback'],
-    ['label' => 'Profile', 'path' => 'municipal-officer/profile'],
 ];
 $isMunicipalNavActive = static function (string $path) use ($currentPath): bool {
     if ($currentPath === $path) {
@@ -74,7 +73,9 @@ $isMunicipalNavActive = static function (string $path) use ($currentPath): bool 
             </nav>
 
             <div class="sidebar-footer">
-                <span><?php echo htmlspecialchars(currentUserName()); ?></span>
+                <a href="<?php echo url('municipal-officer/profile'); ?>">
+                    <?php echo htmlspecialchars(currentUserName()); ?>
+                </a>
                 <a href="<?php echo url('auth/logout'); ?>">Logout</a>
             </div>
         </aside>
