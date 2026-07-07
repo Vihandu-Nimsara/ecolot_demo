@@ -1,5 +1,11 @@
 <section class="hero-card">
-    <h1>Route Details</h1>
+    <div class="page-header">
+        <div>
+            <p class="page-kicker">09</p>
+            <h1 class="page-title">Route Details</h1>
+            <p class="page-subtitle">Review assigned route stops and request status for this route.</p>
+        </div>
+    </div>
 
     <?php echo flash('auth_success'); ?>
     <?php echo flash('auth_error'); ?>

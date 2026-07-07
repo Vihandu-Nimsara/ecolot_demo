@@ -1,5 +1,11 @@
 <section class="hero-card">
-    <h1>E-Lot Bids</h1>
+    <div class="page-header">
+        <div>
+            <p class="page-kicker">11</p>
+            <h1 class="page-title">E-Lot Bids</h1>
+            <p class="page-subtitle">Close bidding when ready and select a winning verified recycler bid.</p>
+        </div>
+    </div>
 
     <?php echo flash('auth_success'); ?>
     <?php echo flash('auth_error'); ?>

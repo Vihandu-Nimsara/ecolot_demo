@@ -14,12 +14,14 @@ class MunicipalOfficerController extends Controller
         requireRole('MUNICIPAL_OFFICER');
 
         $profile = $this->getOfficerProfileOrRedirect();
-        $stats = $this->municipalModel->getDashboardStats((int) $profile->council_id);
+        $councilId = (int) $profile->council_id;
+        $stats = $this->municipalModel->getDashboardStats($councilId);
 
         $this->view('municipal_officer/dashboard', [
             'title' => 'Municipal Officer Dashboard',
             'profile' => $profile,
-            'stats' => $stats
+            'stats' => $stats,
+            'upcoming_area_dates' => $this->municipalModel->getUpcomingAreaCollectionDatesForCouncil($councilId, 6)
         ]);
     }
 
@@ -31,13 +33,15 @@ class MunicipalOfficerController extends Controller
 
     $reportModel = $this->model('ReportWorkflow');
 
-    $this->view('municipal_officer/reports', [
+        $this->view('municipal_officer/reports', [
         'title' => 'Council Reports',
         'profile' => $profile,
         'overview' => $reportModel->getOverviewStats((int) $profile->council_id),
         'request_status_counts' => $reportModel->getRequestStatusCounts((int) $profile->council_id),
         'monthly_requests' => $reportModel->getMonthlyRequestCounts((int) $profile->council_id, 8),
         'category_collected_summary' => $reportModel->getCategoryCollectedSummary((int) $profile->council_id),
+        'route_status_counts' => $reportModel->getRouteStatusCounts((int) $profile->council_id),
+        'collector_workload' => $reportModel->getCollectorWorkloadSummary((int) $profile->council_id),
         'elot_status_counts' => $reportModel->getElotStatusCounts((int) $profile->council_id),
         'bid_summary' => $reportModel->getBidSummary((int) $profile->council_id, 10)
     ]);
@@ -370,12 +374,14 @@ public function elotDetails(int $elotId): void
 
     $items = $this->municipalModel->getElotItems($elotId);
     $history = $this->municipalModel->getElotStatusHistory($elotId);
+    $bids = $this->municipalModel->getBidsForElot($elotId);
 
     $this->view('municipal_officer/elot_details', [
         'title' => 'E-Lot Details',
         'elot' => $elot,
         'items' => $items,
-        'history' => $history
+        'history' => $history,
+        'bids' => $bids
     ]);
 }
 
@@ -560,12 +566,119 @@ private function normalizeDateTimeLocal(string $value): ?string
         $profile = $this->getOfficerProfileOrRedirect();
 
         $campaigns = $this->municipalModel->getCampaignsForCouncil((int) $profile->council_id);
+        $areaDates = $this->municipalModel->getAreaCollectionDatesForCouncil((int) $profile->council_id, 8);
 
         $this->view('municipal_officer/campaigns', [
             'title' => 'Monthly Campaigns',
             'profile' => $profile,
-            'campaigns' => $campaigns
+            'campaigns' => $campaigns,
+            'area_dates' => $areaDates
         ]);
+    }
+
+    public function areaSchedule(): void
+    {
+        requireRole('MUNICIPAL_OFFICER');
+
+        $profile = $this->getOfficerProfileOrRedirect();
+        $councilId = (int) $profile->council_id;
+
+        $this->view('municipal_officer/area_schedule', [
+            'title' => 'Area Collection Schedule',
+            'profile' => $profile,
+            'area_dates' => $this->municipalModel->getAreaCollectionDatesForCouncil($councilId),
+            'areas' => $this->municipalModel->getAreasForCouncil($councilId),
+            'errors' => [],
+            'old' => [
+                'area_id' => '',
+                'collection_date' => '',
+                'max_requests' => 100,
+                'status' => 'OPEN'
+            ]
+        ]);
+    }
+
+    public function createAreaDate(): void
+    {
+        $this->areaSchedule();
+    }
+
+    public function storeAreaDate(): void
+    {
+        requireRole('MUNICIPAL_OFFICER');
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('municipal-officer/area-schedule');
+            return;
+        }
+
+        $profile = $this->getOfficerProfileOrRedirect();
+        $councilId = (int) $profile->council_id;
+
+        $old = [
+            'area_id' => (int) ($_POST['area_id'] ?? 0),
+            'collection_date' => trim($_POST['collection_date'] ?? ''),
+            'max_requests' => (int) ($_POST['max_requests'] ?? 100),
+            'status' => strtoupper(trim($_POST['status'] ?? 'OPEN'))
+        ];
+
+        $errors = $this->validateAreaDate($old, $councilId);
+
+        if (!empty($errors)) {
+            $this->view('municipal_officer/area_schedule', [
+                'title' => 'Area Collection Schedule',
+                'profile' => $profile,
+                'area_dates' => $this->municipalModel->getAreaCollectionDatesForCouncil($councilId),
+                'areas' => $this->municipalModel->getAreasForCouncil($councilId),
+                'errors' => $errors,
+                'old' => $old
+            ]);
+            return;
+        }
+
+        $created = $this->municipalModel->createAreaCollectionDate($old, $councilId);
+
+        if (!$created) {
+            flash('auth_error', 'Failed to create area collection date. It may already exist.', 'alert alert-danger');
+            $this->redirect('municipal-officer/area-schedule');
+            return;
+        }
+
+        flash('auth_success', 'Area collection date created successfully.');
+        $this->redirect('municipal-officer/area-schedule');
+    }
+
+    public function updateAreaDateStatus(int $dateId): void
+    {
+        requireRole('MUNICIPAL_OFFICER');
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('municipal-officer/area-schedule');
+            return;
+        }
+
+        $profile = $this->getOfficerProfileOrRedirect();
+        $status = strtoupper(trim($_POST['status'] ?? ''));
+
+        if (!in_array($status, ['OPEN', 'CLOSED', 'FULL', 'CANCELLED'], true)) {
+            flash('auth_error', 'Invalid area schedule status.', 'alert alert-danger');
+            $this->redirect('municipal-officer/area-schedule');
+            return;
+        }
+
+        $updated = $this->municipalModel->updateAreaCollectionDateStatus(
+            $dateId,
+            (int) $profile->council_id,
+            $status
+        );
+
+        flash(
+            $updated ? 'auth_success' : 'auth_error',
+            $updated ? 'Area schedule status updated.' : 'Area schedule date not found for your council.',
+            $updated ? 'alert alert-success' : 'alert alert-danger'
+        );
+
+        $this->redirect('municipal-officer/area-schedule');
     }
 
     public function createCampaign(): void
@@ -815,7 +928,8 @@ private function normalizeDateTimeLocal(string $value): ?string
         'title' => 'Collection Record Verification',
         'profile' => $profile,
         'pickup_records' => $pickupRecords,
-        'current_status' => $status
+        'current_status' => $status,
+        'stats' => $this->municipalModel->getDashboardStats((int) $profile->council_id)
     ]);
 }
 
@@ -926,6 +1040,165 @@ public function verifiedPool(): void
     ]);
 }
 
+public function flaggedItems(): void
+{
+    requireRole('MUNICIPAL_OFFICER');
+
+    $profile = $this->getOfficerProfileOrRedirect();
+    $status = strtoupper(trim($_GET['status'] ?? 'PENDING'));
+
+    if (!in_array($status, ['PENDING', 'APPROVED_FOR_COLLECTION', 'REJECTED', 'SPECIAL_HANDLING_REQUIRED', 'ALL'], true)) {
+        $status = 'PENDING';
+    }
+
+    $this->view('municipal_officer/flagged_items', [
+        'title' => 'Flagged Item Review',
+        'profile' => $profile,
+        'current_status' => $status,
+        'flags' => $this->municipalModel->getFlaggedItemsForCouncil(
+            (int) $profile->council_id,
+            $status === 'ALL' ? null : $status
+        )
+    ]);
+}
+
+public function updateFlaggedItem(int $flagId): void
+{
+    requireRole('MUNICIPAL_OFFICER');
+
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        $this->redirect('municipal-officer/flagged-items');
+        return;
+    }
+
+    $profile = $this->getOfficerProfileOrRedirect();
+    $reviewStatus = strtoupper(trim($_POST['review_status'] ?? ''));
+    $officerNote = trim($_POST['officer_note'] ?? '');
+
+    if (!in_array($reviewStatus, ['APPROVED_FOR_COLLECTION', 'REJECTED', 'SPECIAL_HANDLING_REQUIRED'], true)) {
+        flash('auth_error', 'Invalid flagged item review decision.', 'alert alert-danger');
+        $this->redirect('municipal-officer/flagged-items');
+        return;
+    }
+
+    if ($reviewStatus === 'REJECTED' && $officerNote === '') {
+        flash('auth_error', 'Please add a note when rejecting a flagged item.', 'alert alert-danger');
+        $this->redirect('municipal-officer/flagged-items');
+        return;
+    }
+
+    $updated = $this->municipalModel->reviewFlaggedItem(
+        $flagId,
+        (int) $profile->council_id,
+        (int) $_SESSION['user_id'],
+        $reviewStatus,
+        $officerNote
+    );
+
+    flash(
+        $updated ? 'auth_success' : 'auth_error',
+        $updated ? 'Flagged item review updated.' : 'Flagged item not found for your council.',
+        $updated ? 'alert alert-success' : 'alert alert-danger'
+    );
+
+    $this->redirect('municipal-officer/flagged-items');
+}
+
+public function feedback(): void
+{
+    requireRole('MUNICIPAL_OFFICER');
+
+    $profile = $this->getOfficerProfileOrRedirect();
+    $status = strtoupper(trim($_GET['status'] ?? 'ALL'));
+
+    if (!in_array($status, ['OPEN', 'IN_REVIEW', 'RESOLVED', 'CLOSED', 'ALL'], true)) {
+        $status = 'ALL';
+    }
+
+    $this->view('municipal_officer/feedback', [
+        'title' => 'Feedback & Complaints',
+        'profile' => $profile,
+        'current_status' => $status,
+        'feedback_list' => $this->municipalModel->getFeedbackForCouncil(
+            (int) $profile->council_id,
+            $status === 'ALL' ? null : $status
+        )
+    ]);
+}
+
+public function feedbackDetails(int $feedbackId): void
+{
+    requireRole('MUNICIPAL_OFFICER');
+
+    $profile = $this->getOfficerProfileOrRedirect();
+    $feedback = $this->municipalModel->getFeedbackDetails($feedbackId, (int) $profile->council_id);
+
+    if (!$feedback) {
+        flash('auth_error', 'Feedback not found for your council.', 'alert alert-danger');
+        $this->redirect('municipal-officer/feedback');
+        return;
+    }
+
+    $this->view('municipal_officer/feedback_details', [
+        'title' => 'Feedback Details',
+        'profile' => $profile,
+        'feedback' => $feedback
+    ]);
+}
+
+public function updateFeedbackStatus(int $feedbackId): void
+{
+    requireRole('MUNICIPAL_OFFICER');
+
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        $this->redirect('municipal-officer/feedback-details/' . $feedbackId);
+        return;
+    }
+
+    $profile = $this->getOfficerProfileOrRedirect();
+    $status = strtoupper(trim($_POST['status'] ?? ''));
+    $officerReply = trim($_POST['officer_reply'] ?? '');
+
+    if (!in_array($status, ['OPEN', 'IN_REVIEW', 'RESOLVED', 'CLOSED'], true)) {
+        flash('auth_error', 'Invalid feedback status.', 'alert alert-danger');
+        $this->redirect('municipal-officer/feedback-details/' . $feedbackId);
+        return;
+    }
+
+    $updated = $this->municipalModel->updateFeedbackStatus(
+        $feedbackId,
+        (int) $profile->council_id,
+        $status,
+        $officerReply
+    );
+
+    flash(
+        $updated ? 'auth_success' : 'auth_error',
+        $updated ? 'Feedback updated successfully.' : 'Failed to update feedback for your council.',
+        $updated ? 'alert alert-success' : 'alert alert-danger'
+    );
+
+    $this->redirect('municipal-officer/feedback-details/' . $feedbackId);
+}
+
+public function profile(): void
+{
+    requireRole('MUNICIPAL_OFFICER');
+
+    $account = $this->municipalModel->getOfficerAccountDetails((int) $_SESSION['user_id']);
+
+    if (!$account) {
+        flash('auth_error', 'Municipal officer profile not found.', 'alert alert-danger');
+        $this->redirect('auth/login');
+        return;
+    }
+
+    $this->view('municipal_officer/profile', [
+        'title' => 'Officer Profile',
+        'account' => $account
+    ]);
+}
+
     private function getOfficerProfileOrRedirect(): mixed
     {
         $profile = $this->municipalModel->getOfficerProfile((int) $_SESSION['user_id']);
@@ -1024,6 +1297,31 @@ public function verifiedPool(): void
             if (count($validRequests) !== count($requestIds)) {
                 $errors['request_ids'] = 'Selected requests must be approved, unassigned, and match the selected area and collection date.';
             }
+        }
+
+        return $errors;
+    }
+
+    private function validateAreaDate(array $data, int $councilId): array
+    {
+        $errors = [];
+
+        if (!$this->municipalModel->findAreaForCouncil((int) $data['area_id'], $councilId)) {
+            $errors['area_id'] = 'Please select a valid council area.';
+        }
+
+        if (empty($data['collection_date'])) {
+            $errors['collection_date'] = 'Collection date is required.';
+        } elseif (strtotime($data['collection_date']) < strtotime(date('Y-m-d'))) {
+            $errors['collection_date'] = 'Collection date cannot be in the past.';
+        }
+
+        if ($data['max_requests'] < 1 || $data['max_requests'] > 1000) {
+            $errors['max_requests'] = 'Maximum requests must be between 1 and 1000.';
+        }
+
+        if (!in_array($data['status'], ['OPEN', 'CLOSED', 'FULL', 'CANCELLED'], true)) {
+            $errors['status'] = 'Invalid schedule status.';
         }
 
         return $errors;

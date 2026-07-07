@@ -1,13 +1,16 @@
 <section class="hero-card">
-    <h1>E-Lots</h1>
+    <div class="page-header">
+        <div>
+            <p class="page-kicker">11</p>
+            <h1 class="page-title">E-Lot & Bid Review</h1>
+            <p class="page-subtitle">Create E-Lots using verified collection items and review recycler bids.</p>
+        </div>
+    </div>
 
     <?php echo flash('auth_success'); ?>
     <?php echo flash('auth_error'); ?>
 
-    <p>
-        <strong>Council:</strong>
-        <?php echo htmlspecialchars($data['profile']->council_name); ?>
-    </p>
+    <p class="muted"><?php echo htmlspecialchars($data['profile']->council_name); ?></p>
 
     <div class="button-row">
         <a class="btn" href="<?php echo url('municipal-officer/create-elot'); ?>">
@@ -86,14 +89,18 @@
                             <td><?php echo htmlspecialchars($elot->created_by_name); ?></td>
 
                             <td>
-    <a href="<?php echo url('municipal-officer/elot-details/' . $elot->elot_id); ?>">
-        View
-    </a>
-    |
-    <a href="<?php echo url('municipal-officer/elot-bids/' . $elot->elot_id); ?>">
-        Bids
-    </a>
-</td>
+                                <div class="button-row compact-actions">
+                                    <a class="btn compact secondary" href="<?php echo url('municipal-officer/elot-details/' . $elot->elot_id); ?>">
+                                        View
+                                    </a>
+
+                                    <?php if ($elot->status !== 'DRAFT'): ?>
+                                        <a class="btn compact" href="<?php echo url('municipal-officer/elot-bids/' . $elot->elot_id); ?>">
+                                            Review Bids
+                                        </a>
+                                    <?php endif; ?>
+                                </div>
+                            </td>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>

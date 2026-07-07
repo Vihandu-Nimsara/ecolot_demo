@@ -1,5 +1,11 @@
 <section class="form-card large-form">
-    <h1>Create E-Lot</h1>
+    <div class="page-header">
+        <div>
+            <p class="page-kicker">11</p>
+            <h1 class="page-title">Create E-Lot</h1>
+            <p class="page-subtitle">Build a lot from verified collection items and optionally open bidding.</p>
+        </div>
+    </div>
 
     <?php if (!empty($data['errors']['elot'])): ?>
         <div class="alert alert-danger">

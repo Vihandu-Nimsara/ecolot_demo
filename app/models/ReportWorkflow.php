@@ -232,6 +232,56 @@ class ReportWorkflow
         return $this->db->resultSet();
     }
 
+    public function getRouteStatusCounts(?int $councilId = null): array
+    {
+        $where = $councilId !== null ? "WHERE cc.council_id = :council_id" : "";
+
+        $this->db->query("
+            SELECT
+                cr.status,
+                COUNT(*) AS total
+            FROM collection_routes cr
+            INNER JOIN collection_campaigns cc ON cr.campaign_id = cc.campaign_id
+            {$where}
+            GROUP BY cr.status
+            ORDER BY total DESC
+        ");
+
+        if ($councilId !== null) {
+            $this->db->bind(':council_id', $councilId);
+        }
+
+        return $this->db->resultSet();
+    }
+
+    public function getCollectorWorkloadSummary(?int $councilId = null): array
+    {
+        $where = $councilId !== null ? "WHERE cp.council_id = :council_id" : "";
+
+        $this->db->query("
+            SELECT
+                u.full_name AS collector_name,
+                cp.availability_status,
+                COUNT(DISTINCT cr.route_id) AS route_count,
+                COUNT(rs.stop_id) AS stop_count,
+                SUM(rs.stop_status = 'COLLECTED') AS collected_stops,
+                SUM(rs.stop_status = 'FAILED') AS failed_stops
+            FROM collector_profiles cp
+            INNER JOIN users u ON cp.user_id = u.user_id
+            LEFT JOIN collection_routes cr ON cp.user_id = cr.collector_id
+            LEFT JOIN route_stops rs ON cr.route_id = rs.route_id
+            {$where}
+            GROUP BY u.user_id, u.full_name, cp.availability_status
+            ORDER BY route_count DESC, stop_count DESC, u.full_name ASC
+        ");
+
+        if ($councilId !== null) {
+            $this->db->bind(':council_id', $councilId);
+        }
+
+        return $this->db->resultSet();
+    }
+
     public function getBidSummary(?int $councilId = null, int $limit = 10): array
     {
         $limit = max(1, min($limit, 50));

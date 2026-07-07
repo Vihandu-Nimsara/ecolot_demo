@@ -1,5 +1,11 @@
 <section class="hero-card">
-    <h1>Request Review</h1>
+    <div class="page-header">
+        <div>
+            <p class="page-kicker">09</p>
+            <h1 class="page-title">Request Review</h1>
+            <p class="page-subtitle">Inspect request details, requested items, flags, and approval status.</p>
+        </div>
+    </div>
 
     <?php echo flash('auth_success'); ?>
     <?php echo flash('auth_error'); ?>

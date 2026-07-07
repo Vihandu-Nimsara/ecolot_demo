@@ -1,5 +1,11 @@
 <section class="form-card large-form">
-    <h1>Create Monthly Collection Campaign</h1>
+    <div class="page-header">
+        <div>
+            <p class="page-kicker">08</p>
+            <h1 class="page-title">Monthly Campaign</h1>
+            <p class="page-subtitle">Create a council campaign using the current campaign month, year, cut-off date, and status fields.</p>
+        </div>
+    </div>
 
     <?php if (!empty($data['errors']['campaign'])): ?>
         <div class="alert alert-danger">

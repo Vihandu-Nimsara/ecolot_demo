@@ -1,5 +1,11 @@
 <section class="hero-card">
-    <h1>E-Lot Details</h1>
+    <div class="page-header">
+        <div>
+            <p class="page-kicker">11</p>
+            <h1 class="page-title">E-Lot Details</h1>
+            <p class="page-subtitle">Review lot items, status history, bids, and handover readiness.</p>
+        </div>
+    </div>
 
     <?php echo flash('auth_success'); ?>
     <?php echo flash('auth_error'); ?>
@@ -117,6 +123,37 @@
             </table>
         </div>
     <?php endif; ?>
+
+    <?php
+        $bidCount = count($data['bids'] ?? []);
+        $winningBid = null;
+
+        foreach ($data['bids'] ?? [] as $bid) {
+            if ($bid->status === 'WINNING_BID') {
+                $winningBid = $bid;
+                break;
+            }
+        }
+    ?>
+
+    <h2>Bid Summary</h2>
+
+    <div class="info-box">
+        <strong>Total Bids:</strong>
+        <?php echo htmlspecialchars($bidCount); ?>
+        <br>
+
+        <strong>Winner:</strong>
+        <?php echo $winningBid
+            ? htmlspecialchars($winningBid->company_name . ' - Rs. ' . number_format((float) $winningBid->bid_amount, 2))
+            : htmlspecialchars($data['elot']->winner_company_name ?? '-'); ?>
+        <br>
+
+        <strong>Bid Review:</strong>
+        <a href="<?php echo url('municipal-officer/elot-bids/' . $data['elot']->elot_id); ?>">
+            Open bid review for this E-Lot
+        </a>
+    </div>
 
     <?php if ($data['elot']->status === 'AWARDED'): ?>
     <h2>Handover Confirmation</h2>

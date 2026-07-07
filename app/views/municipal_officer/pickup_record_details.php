@@ -1,5 +1,11 @@
 <section class="hero-card">
-    <h1>Pickup Record Details</h1>
+    <div class="page-header">
+        <div>
+            <p class="page-kicker">10</p>
+            <h1 class="page-title">Pickup Record Details</h1>
+            <p class="page-subtitle">Review collector notes, collected items, flags, and verification actions.</p>
+        </div>
+    </div>
 
     <?php echo flash('auth_success'); ?>
     <?php echo flash('auth_error'); ?>

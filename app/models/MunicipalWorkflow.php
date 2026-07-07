@@ -51,13 +51,42 @@ class MunicipalWorkflow
     $requestStats = $this->db->single();
 
     $this->db->query("
-        SELECT COUNT(*) AS total_campaigns
+        SELECT
+            COUNT(*) AS total_campaigns,
+            SUM(status IN ('DRAFT', 'OPEN')) AS active_campaigns
         FROM collection_campaigns
         WHERE council_id = :council_id
     ");
 
     $this->db->bind(':council_id', $councilId);
     $campaignStats = $this->db->single();
+
+    $this->db->query("
+        SELECT
+            COUNT(*) AS upcoming_collection_dates,
+            SUM(acd.status = 'OPEN') AS open_collection_dates
+        FROM area_collection_dates acd
+        INNER JOIN collection_areas ca ON acd.area_id = ca.area_id
+        WHERE ca.council_id = :council_id
+        AND acd.collection_date >= CURDATE()
+    ");
+
+    $this->db->bind(':council_id', $councilId);
+    $areaDateStats = $this->db->single();
+
+    $this->db->query("
+        SELECT
+            COUNT(DISTINCT cr.route_id) AS scheduled_routes,
+            SUM(rs.stop_status = 'PENDING') AS pending_route_stops
+        FROM collection_routes cr
+        INNER JOIN collection_campaigns cc ON cr.campaign_id = cc.campaign_id
+        LEFT JOIN route_stops rs ON cr.route_id = rs.route_id
+        WHERE cc.council_id = :council_id
+        AND cr.status IN ('PLANNED', 'ASSIGNED', 'IN_PROGRESS')
+    ");
+
+    $this->db->bind(':council_id', $councilId);
+    $routeStats = $this->db->single();
 
     $this->db->query("
         SELECT COUNT(*) AS pending_flags
@@ -106,6 +135,27 @@ class MunicipalWorkflow
     $this->db->bind(':council_id', $councilId);
     $poolStats = $this->db->single();
 
+    $this->db->query("
+        SELECT
+            SUM(e.status = 'DRAFT') AS draft_elots,
+            SUM(e.status = 'OPEN_FOR_BIDDING') AS open_elots,
+            SUM(e.status = 'BIDDING_CLOSED' AND bid_counts.bid_count > 0) AS elots_with_bids,
+            SUM(e.status = 'AWARDED') AS awarded_elots,
+            SUM(e.status IN ('AWARDED', 'HANDOVER_PENDING')) AS handover_pending_elots,
+            SUM(e.status IN ('HANDED_OVER', 'PROCESSING', 'COMPLETED')) AS processing_completed_elots
+        FROM elots e
+        LEFT JOIN (
+            SELECT elot_id, COUNT(*) AS bid_count
+            FROM bids
+            WHERE status = 'SUBMITTED'
+            GROUP BY elot_id
+        ) bid_counts ON e.elot_id = bid_counts.elot_id
+        WHERE e.council_id = :council_id
+    ");
+
+    $this->db->bind(':council_id', $councilId);
+    $elotStats = $this->db->single();
+
     return (object) [
         'total_requests' => $requestStats->total_requests ?? 0,
         'submitted_requests' => $requestStats->submitted_requests ?? 0,
@@ -116,6 +166,11 @@ class MunicipalWorkflow
         'completed_requests' => $requestStats->completed_requests ?? 0,
 
         'total_campaigns' => $campaignStats->total_campaigns ?? 0,
+        'active_campaigns' => $campaignStats->active_campaigns ?? 0,
+        'upcoming_collection_dates' => $areaDateStats->upcoming_collection_dates ?? 0,
+        'open_collection_dates' => $areaDateStats->open_collection_dates ?? 0,
+        'scheduled_routes' => $routeStats->scheduled_routes ?? 0,
+        'pending_route_stops' => $routeStats->pending_route_stops ?? 0,
         'pending_flags' => $flagStats->pending_flags ?? 0,
 
         'total_pickup_records' => $pickupStats->total_pickup_records ?? 0,
@@ -123,7 +178,13 @@ class MunicipalWorkflow
         'verified_pickup_records' => $pickupStats->verified_pickup_records ?? 0,
         'rejected_pickup_records' => $pickupStats->rejected_pickup_records ?? 0,
 
-        'verified_pool_items' => $poolStats->verified_pool_items ?? 0
+        'verified_pool_items' => $poolStats->verified_pool_items ?? 0,
+        'draft_elots' => $elotStats->draft_elots ?? 0,
+        'open_elots' => $elotStats->open_elots ?? 0,
+        'elots_with_bids' => $elotStats->elots_with_bids ?? 0,
+        'awarded_elots' => $elotStats->awarded_elots ?? 0,
+        'handover_pending_elots' => $elotStats->handover_pending_elots ?? 0,
+        'processing_completed_elots' => $elotStats->processing_completed_elots ?? 0
     ];
 }
 
@@ -1269,6 +1330,113 @@ public function getVerifiedPoolForCouncil(int $councilId): array
         return $this->db->resultSet();
     }
 
+    public function getAreaCollectionDatesForCouncil(int $councilId, ?int $limit = null): array
+    {
+        $limitSql = $limit !== null ? 'LIMIT ' . max(1, min($limit, 100)) : '';
+
+        $this->db->query("
+            SELECT
+                acd.*,
+                ca.area_name,
+                ca.postal_code,
+                COUNT(r.request_id) AS request_count
+            FROM area_collection_dates acd
+            INNER JOIN collection_areas ca ON acd.area_id = ca.area_id
+            LEFT JOIN ewaste_requests r ON acd.date_id = r.preferred_date_id
+            WHERE ca.council_id = :council_id
+            GROUP BY
+                acd.date_id,
+                acd.area_id,
+                acd.collection_date,
+                acd.max_requests,
+                acd.status,
+                acd.created_at,
+                ca.area_name,
+                ca.postal_code
+            ORDER BY acd.collection_date DESC, ca.postal_code ASC
+            {$limitSql}
+        ");
+
+        $this->db->bind(':council_id', $councilId);
+
+        return $this->db->resultSet();
+    }
+
+    public function getUpcomingAreaCollectionDatesForCouncil(int $councilId, int $limit = 6): array
+    {
+        $limitSql = 'LIMIT ' . max(1, min($limit, 100));
+
+        $this->db->query("
+            SELECT
+                acd.*,
+                ca.area_name,
+                ca.postal_code,
+                COUNT(r.request_id) AS request_count
+            FROM area_collection_dates acd
+            INNER JOIN collection_areas ca ON acd.area_id = ca.area_id
+            LEFT JOIN ewaste_requests r ON acd.date_id = r.preferred_date_id
+            WHERE ca.council_id = :council_id
+            AND acd.collection_date >= CURDATE()
+            GROUP BY
+                acd.date_id,
+                acd.area_id,
+                acd.collection_date,
+                acd.max_requests,
+                acd.status,
+                acd.created_at,
+                ca.area_name,
+                ca.postal_code
+            ORDER BY acd.collection_date ASC, ca.postal_code ASC
+            {$limitSql}
+        ");
+
+        $this->db->bind(':council_id', $councilId);
+
+        return $this->db->resultSet();
+    }
+
+    public function createAreaCollectionDate(array $data, int $councilId): bool
+    {
+        if (!$this->findAreaForCouncil((int) $data['area_id'], $councilId)) {
+            return false;
+        }
+
+        try {
+            $this->db->query("
+                INSERT INTO area_collection_dates
+                    (area_id, collection_date, max_requests, status)
+                VALUES
+                    (:area_id, :collection_date, :max_requests, :status)
+            ");
+
+            $this->db->bind(':area_id', $data['area_id']);
+            $this->db->bind(':collection_date', $data['collection_date']);
+            $this->db->bind(':max_requests', $data['max_requests']);
+            $this->db->bind(':status', $data['status']);
+
+            return $this->db->execute();
+        } catch (Throwable $e) {
+            return false;
+        }
+    }
+
+    public function updateAreaCollectionDateStatus(int $dateId, int $councilId, string $status): bool
+    {
+        $this->db->query("
+            UPDATE area_collection_dates acd
+            INNER JOIN collection_areas ca ON acd.area_id = ca.area_id
+            SET acd.status = :status
+            WHERE acd.date_id = :date_id
+            AND ca.council_id = :council_id
+        ");
+
+        $this->db->bind(':status', $status);
+        $this->db->bind(':date_id', $dateId);
+        $this->db->bind(':council_id', $councilId);
+
+        return $this->db->execute();
+    }
+
     public function campaignExists(int $councilId, int $month, int $year): bool
     {
         $this->db->query("
@@ -1408,8 +1576,8 @@ public function getCollectorsForCouncil(int $councilId): array
         WHERE cp.council_id = :council_id
         AND u.role = 'COLLECTOR'
         AND u.status = 'ACTIVE'
-        AND cp.availability_status IN ('AVAILABLE', 'ASSIGNED')
-        ORDER BY cp.availability_status ASC, u.full_name ASC
+        AND cp.availability_status = 'AVAILABLE'
+        ORDER BY u.full_name ASC
     ");
 
     $this->db->bind(':council_id', $councilId);
@@ -1423,8 +1591,8 @@ public function getVehiclesForCouncil(int $councilId): array
         SELECT vehicle_id, vehicle_no, vehicle_type, capacity_kg, status
         FROM vehicles
         WHERE council_id = :council_id
-        AND status IN ('AVAILABLE', 'ASSIGNED')
-        ORDER BY status ASC, vehicle_no ASC
+        AND status = 'AVAILABLE'
+        ORDER BY vehicle_no ASC
     ");
 
     $this->db->bind(':council_id', $councilId);
@@ -1522,6 +1690,7 @@ public function findCollectorForCouncil(int $collectorId, int $councilId): mixed
         AND cp.council_id = :council_id
         AND u.role = 'COLLECTOR'
         AND u.status = 'ACTIVE'
+        AND cp.availability_status = 'AVAILABLE'
         LIMIT 1
     ");
 
@@ -1538,6 +1707,7 @@ public function findVehicleForCouncil(int $vehicleId, int $councilId): mixed
         FROM vehicles
         WHERE vehicle_id = :vehicle_id
         AND council_id = :council_id
+        AND status = 'AVAILABLE'
         LIMIT 1
     ");
 
@@ -1783,5 +1953,205 @@ public function getRouteStops(int $routeId): array
     $this->db->bind(':route_id', $routeId);
 
     return $this->db->resultSet();
+}
+
+public function getFlaggedItemsForCouncil(int $councilId, ?string $reviewStatus = null): array
+{
+    $statusSql = $reviewStatus !== null ? 'AND fi.review_status = :review_status' : '';
+
+    $this->db->query("
+        SELECT
+            fi.*,
+            COALESCE(request_source.request_id, pickup_source.request_id) AS request_id,
+            pickup_source.pickup_id,
+            COALESCE(request_item.item_name, pickup_item.item_name) AS item_name,
+            COALESCE(request_item.category_name, pickup_item.category_name) AS category_name,
+            COALESCE(request_item.condition_status, pickup_item.condition_status) AS condition_status,
+            COALESCE(request_item.quantity, pickup_item.collected_quantity) AS quantity,
+            ca.area_name,
+            ca.postal_code,
+            flagged_by_user.full_name AS flagged_by_name,
+            reviewed_by_user.full_name AS reviewed_by_name
+        FROM flagged_items fi
+        LEFT JOIN (
+            SELECT
+                ri.request_item_id,
+                ri.request_id,
+                ri.quantity,
+                ri.condition_status,
+                i.item_name,
+                c.category_name
+            FROM request_items ri
+            INNER JOIN ewaste_items i ON ri.item_id = i.item_id
+            INNER JOIN ewaste_categories c ON i.category_id = c.category_id
+        ) request_item ON fi.request_item_id = request_item.request_item_id
+        LEFT JOIN ewaste_requests request_source ON request_item.request_id = request_source.request_id
+        LEFT JOIN (
+            SELECT
+                pi.pickup_item_id,
+                pi.pickup_id,
+                pi.collected_quantity,
+                pi.condition_status,
+                pr.request_id,
+                i.item_name,
+                c.category_name
+            FROM pickup_items pi
+            INNER JOIN pickup_records pr ON pi.pickup_id = pr.pickup_id
+            INNER JOIN ewaste_items i ON pi.item_id = i.item_id
+            INNER JOIN ewaste_categories c ON i.category_id = c.category_id
+        ) pickup_item ON fi.pickup_item_id = pickup_item.pickup_item_id
+        LEFT JOIN pickup_records pickup_source ON pickup_item.pickup_id = pickup_source.pickup_id
+        INNER JOIN ewaste_requests r ON r.request_id = COALESCE(request_source.request_id, pickup_source.request_id)
+        INNER JOIN collection_areas ca ON r.area_id = ca.area_id
+        INNER JOIN users flagged_by_user ON fi.flagged_by = flagged_by_user.user_id
+        LEFT JOIN users reviewed_by_user ON fi.reviewed_by = reviewed_by_user.user_id
+        WHERE ca.council_id = :council_id
+        {$statusSql}
+        ORDER BY fi.created_at DESC
+    ");
+
+    $this->db->bind(':council_id', $councilId);
+
+    if ($reviewStatus !== null) {
+        $this->db->bind(':review_status', $reviewStatus);
+    }
+
+    return $this->db->resultSet();
+}
+
+public function reviewFlaggedItem(
+    int $flagId,
+    int $councilId,
+    int $officerId,
+    string $reviewStatus,
+    string $officerNote
+): bool {
+    $this->db->query("
+        UPDATE flagged_items fi
+        LEFT JOIN request_items ri ON fi.request_item_id = ri.request_item_id
+        LEFT JOIN ewaste_requests request_source ON ri.request_id = request_source.request_id
+        LEFT JOIN pickup_items pi ON fi.pickup_item_id = pi.pickup_item_id
+        LEFT JOIN pickup_records pr ON pi.pickup_id = pr.pickup_id
+        LEFT JOIN ewaste_requests pickup_source ON pr.request_id = pickup_source.request_id
+        INNER JOIN ewaste_requests r ON r.request_id = COALESCE(request_source.request_id, pickup_source.request_id)
+        INNER JOIN collection_areas ca ON r.area_id = ca.area_id
+        SET fi.review_status = :review_status,
+            fi.reviewed_by = :reviewed_by,
+            fi.reviewed_at = NOW(),
+            fi.officer_note = :officer_note
+        WHERE fi.flag_id = :flag_id
+        AND ca.council_id = :council_id
+    ");
+
+    $this->db->bind(':review_status', $reviewStatus);
+    $this->db->bind(':reviewed_by', $officerId);
+    $this->db->bind(':officer_note', $officerNote);
+    $this->db->bind(':flag_id', $flagId);
+    $this->db->bind(':council_id', $councilId);
+
+    return $this->db->execute();
+}
+
+public function getFeedbackForCouncil(int $councilId, ?string $status = null): array
+{
+    $statusSql = $status !== null ? 'AND cf.status = :status' : '';
+
+    $this->db->query("
+        SELECT
+            cf.*,
+            u.full_name AS submitted_by_name,
+            u.email AS submitted_by_email,
+            COALESCE(request_area.council_id, profile_area.council_id) AS resolved_council_id
+        FROM complaints_feedback cf
+        INNER JOIN users u ON cf.public_user_id = u.user_id
+        LEFT JOIN ewaste_requests r ON cf.request_id = r.request_id
+        LEFT JOIN collection_areas request_area ON r.area_id = request_area.area_id
+        LEFT JOIN public_user_profiles pup ON cf.public_user_id = pup.user_id
+        LEFT JOIN collection_areas profile_area ON pup.area_id = profile_area.area_id
+        HAVING resolved_council_id = :council_id
+        {$statusSql}
+        ORDER BY cf.created_at DESC
+    ");
+
+    $this->db->bind(':council_id', $councilId);
+
+    if ($status !== null) {
+        $this->db->bind(':status', $status);
+    }
+
+    return $this->db->resultSet();
+}
+
+public function getFeedbackDetails(int $feedbackId, int $councilId): mixed
+{
+    $this->db->query("
+        SELECT
+            cf.*,
+            u.full_name AS submitted_by_name,
+            u.email AS submitted_by_email,
+            COALESCE(request_area.council_id, profile_area.council_id) AS resolved_council_id
+        FROM complaints_feedback cf
+        INNER JOIN users u ON cf.public_user_id = u.user_id
+        LEFT JOIN ewaste_requests r ON cf.request_id = r.request_id
+        LEFT JOIN collection_areas request_area ON r.area_id = request_area.area_id
+        LEFT JOIN public_user_profiles pup ON cf.public_user_id = pup.user_id
+        LEFT JOIN collection_areas profile_area ON pup.area_id = profile_area.area_id
+        WHERE cf.feedback_id = :feedback_id
+        HAVING resolved_council_id = :council_id
+        LIMIT 1
+    ");
+
+    $this->db->bind(':feedback_id', $feedbackId);
+    $this->db->bind(':council_id', $councilId);
+
+    return $this->db->single();
+}
+
+public function updateFeedbackStatus(int $feedbackId, int $councilId, string $status, string $officerReply): bool
+{
+    $this->db->query("
+        UPDATE complaints_feedback cf
+        LEFT JOIN ewaste_requests r ON cf.request_id = r.request_id
+        LEFT JOIN collection_areas request_area ON r.area_id = request_area.area_id
+        LEFT JOIN public_user_profiles pup ON cf.public_user_id = pup.user_id
+        LEFT JOIN collection_areas profile_area ON pup.area_id = profile_area.area_id
+        SET cf.status = :status,
+            cf.officer_reply = :officer_reply
+        WHERE cf.feedback_id = :feedback_id
+        AND COALESCE(request_area.council_id, profile_area.council_id) = :council_id
+    ");
+
+    $this->db->bind(':status', $status);
+    $this->db->bind(':officer_reply', $officerReply);
+    $this->db->bind(':feedback_id', $feedbackId);
+    $this->db->bind(':council_id', $councilId);
+
+    return $this->db->execute();
+}
+
+public function getOfficerAccountDetails(int $userId): mixed
+{
+    $this->db->query("
+        SELECT
+            mop.*,
+            u.full_name,
+            u.email,
+            u.phone,
+            u.role,
+            u.status AS account_status,
+            u.created_at AS account_created_at,
+            lc.council_name,
+            lc.district,
+            lc.province
+        FROM municipal_officer_profiles mop
+        INNER JOIN users u ON mop.user_id = u.user_id
+        INNER JOIN local_councils lc ON mop.council_id = lc.council_id
+        WHERE mop.user_id = :user_id
+        LIMIT 1
+    ");
+
+    $this->db->bind(':user_id', $userId);
+
+    return $this->db->single();
 }
 }

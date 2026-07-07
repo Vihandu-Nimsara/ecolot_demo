@@ -1,13 +1,16 @@
 <section class="hero-card">
-    <h1>Review E-Waste Requests</h1>
+    <div class="page-header">
+        <div>
+            <p class="page-kicker">09</p>
+            <h1 class="page-title">Request Review & Route Assignment</h1>
+            <p class="page-subtitle">Review pickup requests and assign approved requests to collection routes.</p>
+        </div>
+    </div>
 
     <?php echo flash('auth_success'); ?>
     <?php echo flash('auth_error'); ?>
 
-    <p>
-        <strong>Council:</strong>
-        <?php echo htmlspecialchars($data['profile']->council_name); ?>
-    </p>
+    <p class="muted"><?php echo htmlspecialchars($data['profile']->council_name); ?></p>
 
     <div class="button-row">
         <a class="btn secondary" href="<?php echo url('municipal-officer/requests'); ?>">All</a>

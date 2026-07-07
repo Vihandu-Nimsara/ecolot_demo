@@ -1,5 +1,11 @@
 <section class="hero-card">
-    <h1>Collection Routes</h1>
+    <div class="page-header">
+        <div>
+            <p class="page-kicker">09</p>
+            <h1 class="page-title">Collection Routes</h1>
+            <p class="page-subtitle">Track planned, assigned, and in-progress municipal collection routes.</p>
+        </div>
+    </div>
 
     <?php echo flash('auth_success'); ?>
     <?php echo flash('auth_error'); ?>

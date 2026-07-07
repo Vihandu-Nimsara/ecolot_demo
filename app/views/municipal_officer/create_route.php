@@ -1,5 +1,11 @@
 <section class="form-card large-form">
-    <h1>Create Collection Route</h1>
+    <div class="page-header">
+        <div>
+            <p class="page-kicker">09</p>
+            <h1 class="page-title">Create Collection Route</h1>
+            <p class="page-subtitle">Assign approved requests to a collector, vehicle, area, and collection date.</p>
+        </div>
+    </div>
 
     <?php if (!empty($data['errors']['route'])): ?>
         <div class="alert alert-danger">

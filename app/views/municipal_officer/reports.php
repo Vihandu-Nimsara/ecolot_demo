@@ -1,5 +1,11 @@
 <section class="hero-card">
-    <h1>Council Reports & Analytics</h1>
+    <div class="page-header">
+        <div>
+            <p class="page-kicker">Reports</p>
+            <h1 class="page-title">Council Reports & Analytics</h1>
+            <p class="page-subtitle">Review council workload, collection, E-Lot, route, and bid performance.</p>
+        </div>
+    </div>
 
     <?php echo flash('auth_success'); ?>
     <?php echo flash('auth_error'); ?>
@@ -142,6 +148,68 @@
                             <td><?php echo htmlspecialchars($row->pickup_item_count); ?></td>
                             <td><?php echo htmlspecialchars($row->total_quantity); ?></td>
                             <td><?php echo htmlspecialchars(number_format((float)$row->total_weight, 2)); ?> kg</td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    <?php endif; ?>
+</section>
+
+<section class="hero-card">
+    <h2>Route Status Summary</h2>
+
+    <?php if (empty($data['route_status_counts'])): ?>
+        <p class="muted">No route data found.</p>
+    <?php else: ?>
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Route Status</th>
+                        <th>Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($data['route_status_counts'] as $row): ?>
+                        <tr>
+                            <td><span class="status-badge"><?php echo htmlspecialchars($row->status); ?></span></td>
+                            <td><?php echo htmlspecialchars($row->total); ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    <?php endif; ?>
+</section>
+
+<section class="hero-card">
+    <h2>Collector Workload Summary</h2>
+
+    <?php if (empty($data['collector_workload'])): ?>
+        <p class="muted">No collector workload data found.</p>
+    <?php else: ?>
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Collector</th>
+                        <th>Availability</th>
+                        <th>Routes</th>
+                        <th>Stops</th>
+                        <th>Collected Stops</th>
+                        <th>Failed Stops</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($data['collector_workload'] as $row): ?>
+                        <tr>
+                            <td><?php echo htmlspecialchars($row->collector_name); ?></td>
+                            <td><span class="status-badge"><?php echo htmlspecialchars($row->availability_status); ?></span></td>
+                            <td><?php echo htmlspecialchars($row->route_count); ?></td>
+                            <td><?php echo htmlspecialchars($row->stop_count); ?></td>
+                            <td><?php echo htmlspecialchars($row->collected_stops ?? 0); ?></td>
+                            <td><?php echo htmlspecialchars($row->failed_stops ?? 0); ?></td>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>

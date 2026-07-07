@@ -1,5 +1,11 @@
 <section class="hero-card">
-    <h1>Verified E-Waste Pool</h1>
+    <div class="page-header">
+        <div>
+            <p class="page-kicker">10</p>
+            <h1 class="page-title">Verified E-Waste Pool</h1>
+            <p class="page-subtitle">Verified collected items available for E-Lot creation.</p>
+        </div>
+    </div>
 
     <?php echo flash('auth_success'); ?>
     <?php echo flash('auth_error'); ?>

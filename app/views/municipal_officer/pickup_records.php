@@ -1,13 +1,33 @@
 <section class="hero-card">
-    <h1>Collection Record Verification</h1>
+    <div class="page-header">
+        <div>
+            <p class="page-kicker">10</p>
+            <h1 class="page-title">Collection Verification</h1>
+            <p class="page-subtitle">Verify pickup records submitted by collectors before creating E-Lots.</p>
+        </div>
+    </div>
 
     <?php echo flash('auth_success'); ?>
     <?php echo flash('auth_error'); ?>
 
-    <p>
-        <strong>Council:</strong>
-        <?php echo htmlspecialchars($data['profile']->council_name); ?>
-    </p>
+    <p class="muted"><?php echo htmlspecialchars($data['profile']->council_name); ?></p>
+
+    <div class="stats-grid">
+        <a class="stat-card link-card" href="<?php echo url('municipal-officer/pickup-records/pending'); ?>">
+            <span class="stat-label">Pending Records</span>
+            <strong class="stat-number"><?php echo htmlspecialchars($data['stats']->pending_pickup_records ?? 0); ?></strong>
+        </a>
+
+        <a class="stat-card link-card" href="<?php echo url('municipal-officer/pickup-records/verified'); ?>">
+            <span class="stat-label">Verified Records</span>
+            <strong class="stat-number"><?php echo htmlspecialchars($data['stats']->verified_pickup_records ?? 0); ?></strong>
+        </a>
+
+        <a class="stat-card link-card" href="<?php echo url('municipal-officer/pickup-records/rejected'); ?>">
+            <span class="stat-label">Rejected Records</span>
+            <strong class="stat-number"><?php echo htmlspecialchars($data['stats']->rejected_pickup_records ?? 0); ?></strong>
+        </a>
+    </div>
 
     <div class="button-row">
         <a class="btn secondary" href="<?php echo url('municipal-officer/pickup-records/pending'); ?>">Pending</a>
