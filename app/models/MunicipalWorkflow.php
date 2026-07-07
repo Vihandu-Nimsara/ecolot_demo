@@ -1117,13 +1117,21 @@ public function getVerifiedPoolForCouncil(int $councilId): array
 }
 
 
-    public function getRequestsForCouncil(int $councilId, ?string $status = null): array
+    public function getRequestsForCouncil(int $councilId, ?string $status = null, array $filters = []): array
     {
         $statusSql = '';
 
         if ($status !== null) {
             $statusSql = 'AND r.status = :status';
         }
+
+        $areaSql = !empty($filters['area_id']) ? 'AND r.area_id = :area_id' : '';
+        $dateSql = !empty($filters['date_id']) ? 'AND r.preferred_date_id = :date_id' : '';
+        $searchSql = !empty($filters['search']) ? 'AND (u.full_name LIKE :search OR u.email LIKE :search OR r.pickup_address LIKE :search OR r.contact_phone LIKE :search)' : '';
+        $hasCampaign = $this->tableHasColumn('area_collection_dates', 'campaign_id');
+        $campaignSelect = $hasCampaign ? ", cc.campaign_id, cc.campaign_name, cc.campaign_month, cc.campaign_year" : ", NULL AS campaign_id, NULL AS campaign_name, NULL AS campaign_month, NULL AS campaign_year";
+        $campaignJoin = $hasCampaign ? "LEFT JOIN collection_campaigns cc ON acd.campaign_id = cc.campaign_id" : "";
+        $campaignSql = $hasCampaign && !empty($filters['campaign_id']) ? 'AND acd.campaign_id = :campaign_id' : '';
 
         $this->db->query("
             SELECT
@@ -1137,16 +1145,25 @@ public function getVerifiedPoolForCouncil(int $councilId): array
                 u.email AS public_user_email,
                 ca.area_name,
                 ca.postal_code,
+                acd.date_id,
                 acd.collection_date,
                 COUNT(ri.request_item_id) AS item_count,
-                COALESCE(SUM(ri.estimated_weight_kg), 0) AS total_estimated_weight
+                COALESCE(SUM(ri.estimated_weight_kg), 0) AS total_estimated_weight,
+                COUNT(DISTINCT fi.flag_id) AS flag_count
+                {$campaignSelect}
             FROM ewaste_requests r
             INNER JOIN users u ON r.public_user_id = u.user_id
             INNER JOIN collection_areas ca ON r.area_id = ca.area_id
             INNER JOIN area_collection_dates acd ON r.preferred_date_id = acd.date_id
+            {$campaignJoin}
             LEFT JOIN request_items ri ON r.request_id = ri.request_id
+            LEFT JOIN flagged_items fi ON ri.request_item_id = fi.request_item_id
             WHERE ca.council_id = :council_id
             {$statusSql}
+            {$areaSql}
+            {$dateSql}
+            {$campaignSql}
+            {$searchSql}
             GROUP BY
                 r.request_id,
                 r.status,
@@ -1158,7 +1175,9 @@ public function getVerifiedPoolForCouncil(int $councilId): array
                 u.email,
                 ca.area_name,
                 ca.postal_code,
-                acd.collection_date
+                acd.date_id,
+                acd.collection_date" .
+                ($hasCampaign ? ", cc.campaign_id, cc.campaign_name, cc.campaign_month, cc.campaign_year" : "") . "
             ORDER BY r.created_at DESC
         ");
 
@@ -1168,11 +1187,31 @@ public function getVerifiedPoolForCouncil(int $councilId): array
             $this->db->bind(':status', $status);
         }
 
+        if (!empty($filters['area_id'])) {
+            $this->db->bind(':area_id', (int) $filters['area_id']);
+        }
+
+        if (!empty($filters['date_id'])) {
+            $this->db->bind(':date_id', (int) $filters['date_id']);
+        }
+
+        if ($hasCampaign && !empty($filters['campaign_id'])) {
+            $this->db->bind(':campaign_id', (int) $filters['campaign_id']);
+        }
+
+        if (!empty($filters['search'])) {
+            $this->db->bind(':search', '%' . $filters['search'] . '%');
+        }
+
         return $this->db->resultSet();
     }
 
     public function getRequestByIdForCouncil(int $requestId, int $councilId): mixed
     {
+        $hasCampaign = $this->tableHasColumn('area_collection_dates', 'campaign_id');
+        $campaignSelect = $hasCampaign ? ", cc.campaign_name, cc.campaign_month, cc.campaign_year, cc.request_cutoff_date, cc.status AS campaign_status" : ", NULL AS campaign_name, NULL AS campaign_month, NULL AS campaign_year, NULL AS request_cutoff_date, NULL AS campaign_status";
+        $campaignJoin = $hasCampaign ? "LEFT JOIN collection_campaigns cc ON acd.campaign_id = cc.campaign_id" : "";
+
         $this->db->query("
             SELECT
                 r.*,
@@ -1180,11 +1219,14 @@ public function getVerifiedPoolForCouncil(int $councilId): array
                 u.email AS public_user_email,
                 ca.area_name,
                 ca.postal_code,
+                acd.date_id,
                 acd.collection_date
+                {$campaignSelect}
             FROM ewaste_requests r
             INNER JOIN users u ON r.public_user_id = u.user_id
             INNER JOIN collection_areas ca ON r.area_id = ca.area_id
             INNER JOIN area_collection_dates acd ON r.preferred_date_id = acd.date_id
+            {$campaignJoin}
             WHERE r.request_id = :request_id
             AND ca.council_id = :council_id
             LIMIT 1
@@ -1333,6 +1375,10 @@ public function getVerifiedPoolForCouncil(int $councilId): array
     public function getAreaCollectionDatesForCouncil(int $councilId, ?int $limit = null): array
     {
         $limitSql = $limit !== null ? 'LIMIT ' . max(1, min($limit, 100)) : '';
+        $hasCampaign = $this->tableHasColumn('area_collection_dates', 'campaign_id');
+        $campaignSelect = $hasCampaign ? ", cc.campaign_name, cc.campaign_month, cc.campaign_year, cc.request_cutoff_date, cc.status AS campaign_status" : ", NULL AS campaign_name, NULL AS campaign_month, NULL AS campaign_year, NULL AS request_cutoff_date, NULL AS campaign_status";
+        $campaignJoin = $hasCampaign ? "LEFT JOIN collection_campaigns cc ON acd.campaign_id = cc.campaign_id" : "";
+        $campaignGroup = $hasCampaign ? ", acd.campaign_id, cc.campaign_name, cc.campaign_month, cc.campaign_year, cc.request_cutoff_date, cc.status" : "";
 
         $this->db->query("
             SELECT
@@ -1340,8 +1386,10 @@ public function getVerifiedPoolForCouncil(int $councilId): array
                 ca.area_name,
                 ca.postal_code,
                 COUNT(r.request_id) AS request_count
+                {$campaignSelect}
             FROM area_collection_dates acd
             INNER JOIN collection_areas ca ON acd.area_id = ca.area_id
+            {$campaignJoin}
             LEFT JOIN ewaste_requests r ON acd.date_id = r.preferred_date_id
             WHERE ca.council_id = :council_id
             GROUP BY
@@ -1353,6 +1401,7 @@ public function getVerifiedPoolForCouncil(int $councilId): array
                 acd.created_at,
                 ca.area_name,
                 ca.postal_code
+                {$campaignGroup}
             ORDER BY acd.collection_date DESC, ca.postal_code ASC
             {$limitSql}
         ");
@@ -1365,6 +1414,10 @@ public function getVerifiedPoolForCouncil(int $councilId): array
     public function getUpcomingAreaCollectionDatesForCouncil(int $councilId, int $limit = 6): array
     {
         $limitSql = 'LIMIT ' . max(1, min($limit, 100));
+        $hasCampaign = $this->tableHasColumn('area_collection_dates', 'campaign_id');
+        $campaignSelect = $hasCampaign ? ", cc.campaign_name, cc.campaign_month, cc.campaign_year" : ", NULL AS campaign_name, NULL AS campaign_month, NULL AS campaign_year";
+        $campaignJoin = $hasCampaign ? "LEFT JOIN collection_campaigns cc ON acd.campaign_id = cc.campaign_id" : "";
+        $campaignGroup = $hasCampaign ? ", acd.campaign_id, cc.campaign_name, cc.campaign_month, cc.campaign_year" : "";
 
         $this->db->query("
             SELECT
@@ -1372,8 +1425,10 @@ public function getVerifiedPoolForCouncil(int $councilId): array
                 ca.area_name,
                 ca.postal_code,
                 COUNT(r.request_id) AS request_count
+                {$campaignSelect}
             FROM area_collection_dates acd
             INNER JOIN collection_areas ca ON acd.area_id = ca.area_id
+            {$campaignJoin}
             LEFT JOIN ewaste_requests r ON acd.date_id = r.preferred_date_id
             WHERE ca.council_id = :council_id
             AND acd.collection_date >= CURDATE()
@@ -1386,6 +1441,7 @@ public function getVerifiedPoolForCouncil(int $councilId): array
                 acd.created_at,
                 ca.area_name,
                 ca.postal_code
+                {$campaignGroup}
             ORDER BY acd.collection_date ASC, ca.postal_code ASC
             {$limitSql}
         ");
@@ -1402,13 +1458,20 @@ public function getVerifiedPoolForCouncil(int $councilId): array
         }
 
         try {
+            $hasCampaign = $this->tableHasColumn('area_collection_dates', 'campaign_id');
+            $campaignColumn = $hasCampaign ? 'campaign_id, ' : '';
+            $campaignValue = $hasCampaign ? ':campaign_id, ' : '';
+
             $this->db->query("
                 INSERT INTO area_collection_dates
-                    (area_id, collection_date, max_requests, status)
+                    ({$campaignColumn}area_id, collection_date, max_requests, status)
                 VALUES
-                    (:area_id, :collection_date, :max_requests, :status)
+                    ({$campaignValue}:area_id, :collection_date, :max_requests, :status)
             ");
 
+            if ($hasCampaign) {
+                $this->db->bind(':campaign_id', (int) $data['campaign_id']);
+            }
             $this->db->bind(':area_id', $data['area_id']);
             $this->db->bind(':collection_date', $data['collection_date']);
             $this->db->bind(':max_requests', $data['max_requests']);
@@ -1600,12 +1663,114 @@ public function getVehiclesForCouncil(int $councilId): array
     return $this->db->resultSet();
 }
 
-public function getApprovedRequestsForRoutePlanning(int $councilId): array
+public function getScheduleOptionsForCouncil(int $councilId, ?int $campaignId = null): array
 {
+    $hasCampaign = $this->tableHasColumn('area_collection_dates', 'campaign_id');
+    $campaignSelect = $hasCampaign
+        ? "cc.campaign_id, cc.campaign_name, cc.campaign_month, cc.campaign_year, cc.status AS campaign_status,"
+        : "NULL AS campaign_id, NULL AS campaign_name, NULL AS campaign_month, NULL AS campaign_year, NULL AS campaign_status,";
+    $campaignJoin = $hasCampaign ? "INNER JOIN collection_campaigns cc ON acd.campaign_id = cc.campaign_id" : "";
+    $campaignWhere = $hasCampaign && $campaignId !== null ? "AND cc.campaign_id = :campaign_id" : "";
+
+    $this->db->query("
+        SELECT
+            acd.date_id,
+            {$campaignSelect}
+            acd.area_id,
+            acd.collection_date,
+            acd.max_requests,
+            acd.status,
+            ca.area_name,
+            ca.postal_code,
+            COUNT(r.request_id) AS request_count
+        FROM area_collection_dates acd
+        INNER JOIN collection_areas ca ON acd.area_id = ca.area_id
+        {$campaignJoin}
+        LEFT JOIN ewaste_requests r ON acd.date_id = r.preferred_date_id
+        WHERE ca.council_id = :council_id
+        {$campaignWhere}
+        GROUP BY acd.date_id, acd.area_id, acd.collection_date, acd.max_requests, acd.status, ca.area_name, ca.postal_code" .
+        ($hasCampaign ? ", cc.campaign_id, cc.campaign_name, cc.campaign_month, cc.campaign_year, cc.status" : "") . "
+        ORDER BY acd.collection_date ASC, ca.postal_code ASC
+    ");
+
+    $this->db->bind(':council_id', $councilId);
+
+    if ($hasCampaign && $campaignId !== null) {
+        $this->db->bind(':campaign_id', $campaignId);
+    }
+
+    return $this->db->resultSet();
+}
+
+public function findScheduleForCouncil(int $dateId, int $councilId): mixed
+{
+    $hasCampaign = $this->tableHasColumn('area_collection_dates', 'campaign_id');
+    $campaignSelect = $hasCampaign
+        ? "cc.campaign_id, cc.campaign_name, cc.campaign_month, cc.campaign_year, cc.status AS campaign_status,"
+        : "NULL AS campaign_id, NULL AS campaign_name, NULL AS campaign_month, NULL AS campaign_year, NULL AS campaign_status,";
+    $campaignJoin = $hasCampaign ? "LEFT JOIN collection_campaigns cc ON acd.campaign_id = cc.campaign_id" : "";
+
+    $this->db->query("
+        SELECT
+            acd.*,
+            {$campaignSelect}
+            ca.council_id,
+            ca.area_name,
+            ca.postal_code
+        FROM area_collection_dates acd
+        INNER JOIN collection_areas ca ON acd.area_id = ca.area_id
+        {$campaignJoin}
+        WHERE acd.date_id = :date_id
+        AND ca.council_id = :council_id
+        LIMIT 1
+    ");
+
+    $this->db->bind(':date_id', $dateId);
+    $this->db->bind(':council_id', $councilId);
+
+    return $this->db->single();
+}
+
+public function areaCollectionDateExists(array $data, int $councilId): bool
+{
+    $hasCampaign = $this->tableHasColumn('area_collection_dates', 'campaign_id');
+    $campaignSql = $hasCampaign ? "AND acd.campaign_id = :campaign_id" : "";
+
+    $this->db->query("
+        SELECT acd.date_id
+        FROM area_collection_dates acd
+        INNER JOIN collection_areas ca ON acd.area_id = ca.area_id
+        WHERE ca.council_id = :council_id
+        AND acd.area_id = :area_id
+        AND acd.collection_date = :collection_date
+        {$campaignSql}
+        LIMIT 1
+    ");
+
+    $this->db->bind(':council_id', $councilId);
+    $this->db->bind(':area_id', (int) $data['area_id']);
+    $this->db->bind(':collection_date', $data['collection_date']);
+
+    if ($hasCampaign) {
+        $this->db->bind(':campaign_id', (int) $data['campaign_id']);
+    }
+
+    return (bool) $this->db->single();
+}
+
+public function getApprovedRequestsForRoutePlanning(int $councilId, ?int $dateId = null): array
+{
+    $dateSql = $dateId !== null ? "AND r.preferred_date_id = :date_id" : "";
+    $hasCampaign = $this->tableHasColumn('area_collection_dates', 'campaign_id');
+    $campaignSelect = $hasCampaign ? ", cc.campaign_name, cc.campaign_month, cc.campaign_year" : ", NULL AS campaign_name, NULL AS campaign_month, NULL AS campaign_year";
+    $campaignJoin = $hasCampaign ? "LEFT JOIN collection_campaigns cc ON acd.campaign_id = cc.campaign_id" : "";
+
     $this->db->query("
         SELECT
             r.request_id,
             r.area_id,
+            r.preferred_date_id,
             r.pickup_address,
             r.contact_phone,
             r.status,
@@ -1615,29 +1780,38 @@ public function getApprovedRequestsForRoutePlanning(int $councilId): array
             acd.collection_date,
             COUNT(ri.request_item_id) AS item_count,
             COALESCE(SUM(ri.estimated_weight_kg), 0) AS total_estimated_weight
+            {$campaignSelect}
         FROM ewaste_requests r
         INNER JOIN users u ON r.public_user_id = u.user_id
         INNER JOIN collection_areas ca ON r.area_id = ca.area_id
         INNER JOIN area_collection_dates acd ON r.preferred_date_id = acd.date_id
+        {$campaignJoin}
         LEFT JOIN request_items ri ON r.request_id = ri.request_id
         LEFT JOIN route_stops rs ON r.request_id = rs.request_id
         WHERE ca.council_id = :council_id
         AND r.status = 'APPROVED'
         AND rs.stop_id IS NULL
+        {$dateSql}
         GROUP BY
             r.request_id,
             r.area_id,
+            r.preferred_date_id,
             r.pickup_address,
             r.contact_phone,
             r.status,
             u.full_name,
             ca.area_name,
             ca.postal_code,
-            acd.collection_date
+            acd.collection_date" .
+            ($hasCampaign ? ", cc.campaign_name, cc.campaign_month, cc.campaign_year" : "") . "
         ORDER BY acd.collection_date ASC, ca.postal_code ASC, r.created_at ASC
     ");
 
     $this->db->bind(':council_id', $councilId);
+
+    if ($dateId !== null) {
+        $this->db->bind(':date_id', $dateId);
+    }
 
     return $this->db->resultSet();
 }
@@ -1720,8 +1894,7 @@ public function findVehicleForCouncil(int $vehicleId, int $councilId): mixed
 public function validateApprovedRequestsForRoute(
     array $requestIds,
     int $councilId,
-    int $areaId,
-    string $collectionDate
+    int $dateId
 ): array {
     if (empty($requestIds)) {
         return [];
@@ -1739,6 +1912,7 @@ public function validateApprovedRequestsForRoute(
             r.request_id,
             r.status,
             r.area_id,
+            r.preferred_date_id,
             acd.collection_date,
             ca.council_id
         FROM ewaste_requests r
@@ -1747,8 +1921,7 @@ public function validateApprovedRequestsForRoute(
         LEFT JOIN route_stops rs ON r.request_id = rs.request_id
         WHERE r.request_id IN ($inSql)
         AND ca.council_id = :council_id
-        AND r.area_id = :area_id
-        AND acd.collection_date = :collection_date
+        AND r.preferred_date_id = :date_id
         AND r.status = 'APPROVED'
         AND rs.stop_id IS NULL
     ");
@@ -1758,8 +1931,7 @@ public function validateApprovedRequestsForRoute(
     }
 
     $this->db->bind(':council_id', $councilId);
-    $this->db->bind(':area_id', $areaId);
-    $this->db->bind(':collection_date', $collectionDate);
+    $this->db->bind(':date_id', $dateId);
 
     return $this->db->resultSet();
 }
@@ -1771,11 +1943,16 @@ public function createRouteWithStops(array $data): bool
 
         $status = $data['collector_id'] && $data['vehicle_id'] ? 'ASSIGNED' : 'PLANNED';
 
+        $hasDateId = $this->tableHasColumn('collection_routes', 'date_id');
+        $dateColumn = $hasDateId ? 'date_id,' : '';
+        $dateValue = $hasDateId ? ':date_id,' : '';
+
         $this->db->query("
             INSERT INTO collection_routes
                 (
                     campaign_id,
                     area_id,
+                    {$dateColumn}
                     route_name,
                     collection_date,
                     collector_id,
@@ -1786,6 +1963,7 @@ public function createRouteWithStops(array $data): bool
                 (
                     :campaign_id,
                     :area_id,
+                    {$dateValue}
                     :route_name,
                     :collection_date,
                     :collector_id,
@@ -1796,6 +1974,9 @@ public function createRouteWithStops(array $data): bool
 
         $this->db->bind(':campaign_id', $data['campaign_id']);
         $this->db->bind(':area_id', $data['area_id']);
+        if ($hasDateId) {
+            $this->db->bind(':date_id', $data['date_id']);
+        }
         $this->db->bind(':route_name', $data['route_name']);
         $this->db->bind(':collection_date', $data['collection_date']);
         $this->db->bind(':collector_id', $data['collector_id']);
@@ -1889,12 +2070,21 @@ public function createRouteWithStops(array $data): bool
 
 public function getRouteByIdForCouncil(int $routeId, int $councilId): mixed
 {
+    $hasDateId = $this->tableHasColumn('collection_routes', 'date_id');
+    $scheduleJoin = $hasDateId
+        ? "LEFT JOIN area_collection_dates acd ON cr.date_id = acd.date_id"
+        : "LEFT JOIN area_collection_dates acd ON cr.area_id = acd.area_id AND cr.collection_date = acd.collection_date";
+
     $this->db->query("
         SELECT
             cr.*,
             cc.campaign_name,
+            cc.campaign_month,
+            cc.campaign_year,
             ca.area_name,
             ca.postal_code,
+            acd.date_id AS schedule_id,
+            acd.status AS schedule_status,
             u.full_name AS collector_name,
             u.email AS collector_email,
             v.vehicle_no,
@@ -1903,6 +2093,7 @@ public function getRouteByIdForCouncil(int $routeId, int $councilId): mixed
         FROM collection_routes cr
         INNER JOIN collection_campaigns cc ON cr.campaign_id = cc.campaign_id
         INNER JOIN collection_areas ca ON cr.area_id = ca.area_id
+        {$scheduleJoin}
         LEFT JOIN users u ON cr.collector_id = u.user_id
         LEFT JOIN vehicles v ON cr.vehicle_id = v.vehicle_id
         WHERE cr.route_id = :route_id
@@ -2153,5 +2344,26 @@ public function getOfficerAccountDetails(int $userId): mixed
     $this->db->bind(':user_id', $userId);
 
     return $this->db->single();
+}
+
+public function supportsScheduleCampaigns(): bool
+{
+    return $this->tableHasColumn('area_collection_dates', 'campaign_id');
+}
+
+public function supportsRouteSchedules(): bool
+{
+    return $this->tableHasColumn('collection_routes', 'date_id');
+}
+
+private function tableHasColumn(string $table, string $column): bool
+{
+    try {
+        $this->db->query("SHOW COLUMNS FROM {$table} LIKE :column_name");
+        $this->db->bind(':column_name', $column);
+        return (bool) $this->db->single();
+    } catch (Throwable $e) {
+        return false;
+    }
 }
 }

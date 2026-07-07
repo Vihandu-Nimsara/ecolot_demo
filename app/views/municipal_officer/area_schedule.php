@@ -16,10 +16,32 @@
     <?php echo flash('auth_success'); ?>
     <?php echo flash('auth_error'); ?>
 
+    <?php if (empty($data['supports_schedule_campaigns'])): ?>
+        <div class="warning-box">
+            Apply <code>database/migrations/municipal_officer_business_rules.sql</code> to persist campaign links on new schedules.
+        </div>
+    <?php endif; ?>
+
     <div class="workflow-panel">
         <h2 class="section-title">Create Collection Date</h2>
 
         <form method="POST" action="<?php echo url('municipal-officer/store-area-date'); ?>">
+            <div class="form-group">
+                <label for="campaign_id">Monthly Campaign</label>
+                <select id="campaign_id" name="campaign_id" required>
+                    <option value="">Select campaign</option>
+                    <?php foreach ($data['campaigns'] as $campaign): ?>
+                        <option value="<?php echo htmlspecialchars($campaign->campaign_id); ?>"
+                            <?php echo ((int)($data['old']['campaign_id'] ?? 0) === (int)$campaign->campaign_id) ? 'selected' : ''; ?>>
+                            <?php echo htmlspecialchars($campaign->campaign_name . ' (' . $campaign->campaign_month . '/' . $campaign->campaign_year . ') - ' . $campaign->status); ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+                <?php if (!empty($data['errors']['campaign_id'])): ?>
+                    <small class="error-text"><?php echo htmlspecialchars($data['errors']['campaign_id']); ?></small>
+                <?php endif; ?>
+            </div>
+
             <div class="grid-2">
                 <div class="form-group">
                     <label for="area_id">Postal-code Area</label>
@@ -103,6 +125,7 @@
                 <thead>
                     <tr>
                         <th>Date ID</th>
+                        <th>Campaign</th>
                         <th>Area</th>
                         <th>Collection Date</th>
                         <th>Requests</th>
@@ -115,6 +138,15 @@
                     <?php foreach ($data['area_dates'] as $areaDate): ?>
                         <tr>
                             <td>#<?php echo htmlspecialchars($areaDate->date_id); ?></td>
+                            <td>
+                                <?php if (!empty($areaDate->campaign_name)): ?>
+                                    <?php echo htmlspecialchars($areaDate->campaign_name); ?>
+                                    <br>
+                                    <small><?php echo htmlspecialchars($areaDate->campaign_month . '/' . $areaDate->campaign_year); ?></small>
+                                <?php else: ?>
+                                    <span class="muted">Migration needed</span>
+                                <?php endif; ?>
+                            </td>
                             <td><?php echo htmlspecialchars($areaDate->postal_code . ' - ' . $areaDate->area_name); ?></td>
                             <td><?php echo htmlspecialchars($areaDate->collection_date); ?></td>
                             <td><?php echo htmlspecialchars($areaDate->request_count); ?></td>

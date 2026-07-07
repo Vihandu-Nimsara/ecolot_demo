@@ -33,17 +33,30 @@ class EWasteRequest
 
     public function getOpenDatesForArea(int $areaId): array
     {
+        $hasCampaign = $this->tableHasColumn('area_collection_dates', 'campaign_id');
+        $campaignSelect = $hasCampaign ? ", cc.campaign_name, cc.campaign_month, cc.campaign_year, cc.request_cutoff_date" : "";
+        $campaignJoin = $hasCampaign ? "INNER JOIN collection_campaigns cc ON d.campaign_id = cc.campaign_id" : "";
+        $campaignWhere = $hasCampaign ? "AND cc.status = 'OPEN' AND CURDATE() <= cc.request_cutoff_date" : "";
+        $campaignGroup = $hasCampaign ? ", cc.campaign_name, cc.campaign_month, cc.campaign_year, cc.request_cutoff_date" : "";
+
         $this->db->query("
             SELECT 
-                date_id,
-                collection_date,
-                max_requests,
-                status
-            FROM area_collection_dates
-            WHERE area_id = :area_id
-            AND status = 'OPEN'
-            AND collection_date >= CURDATE()
-            ORDER BY collection_date ASC
+                d.date_id,
+                d.collection_date,
+                d.max_requests,
+                d.status,
+                COUNT(r.request_id) AS request_count
+                {$campaignSelect}
+            FROM area_collection_dates d
+            {$campaignJoin}
+            LEFT JOIN ewaste_requests r ON d.date_id = r.preferred_date_id
+            WHERE d.area_id = :area_id
+            AND d.status = 'OPEN'
+            AND d.collection_date >= CURDATE()
+            {$campaignWhere}
+            GROUP BY d.date_id, d.collection_date, d.max_requests, d.status {$campaignGroup}
+            HAVING request_count < d.max_requests
+            ORDER BY d.collection_date ASC
         ");
 
         $this->db->bind(':area_id', $areaId);
@@ -53,13 +66,27 @@ class EWasteRequest
 
     public function findOpenDateByIdForArea(int $dateId, int $areaId): mixed
     {
+        $hasCampaign = $this->tableHasColumn('area_collection_dates', 'campaign_id');
+        $campaignSelect = $hasCampaign ? ", cc.campaign_name, cc.request_cutoff_date, cc.status AS campaign_status" : "";
+        $campaignJoin = $hasCampaign ? "INNER JOIN collection_campaigns cc ON d.campaign_id = cc.campaign_id" : "";
+        $campaignWhere = $hasCampaign ? "AND cc.status = 'OPEN' AND CURDATE() <= cc.request_cutoff_date" : "";
+        $campaignGroup = $hasCampaign ? ", cc.campaign_name, cc.request_cutoff_date, cc.status" : "";
+
         $this->db->query("
-            SELECT *
-            FROM area_collection_dates
-            WHERE date_id = :date_id
-            AND area_id = :area_id
-            AND status = 'OPEN'
-            AND collection_date >= CURDATE()
+            SELECT
+                d.*,
+                COUNT(r.request_id) AS request_count
+                {$campaignSelect}
+            FROM area_collection_dates d
+            {$campaignJoin}
+            LEFT JOIN ewaste_requests r ON d.date_id = r.preferred_date_id
+            WHERE d.date_id = :date_id
+            AND d.area_id = :area_id
+            AND d.status = 'OPEN'
+            AND d.collection_date >= CURDATE()
+            {$campaignWhere}
+            GROUP BY d.date_id, d.area_id, d.collection_date, d.max_requests, d.status, d.created_at {$campaignGroup}
+            HAVING request_count < d.max_requests
             LIMIT 1
         ");
 
@@ -233,6 +260,8 @@ class EWasteRequest
             $this->db->bind(':description', 'Public user submitted e-waste request ID: ' . $requestId);
             $this->db->execute();
 
+            $this->markScheduleFullIfCapacityReached((int) $data['preferred_date_id']);
+
             $this->db->commit();
 
             return true;
@@ -355,5 +384,34 @@ class EWasteRequest
         $this->db->bind(':user_id', $userId);
 
         return $this->db->single();
+    }
+
+    private function markScheduleFullIfCapacityReached(int $dateId): void
+    {
+        $this->db->query("
+            UPDATE area_collection_dates d
+            SET d.status = 'FULL'
+            WHERE d.date_id = :date_id
+            AND d.status = 'OPEN'
+            AND (
+                SELECT COUNT(*)
+                FROM ewaste_requests r
+                WHERE r.preferred_date_id = d.date_id
+            ) >= d.max_requests
+        ");
+
+        $this->db->bind(':date_id', $dateId);
+        $this->db->execute();
+    }
+
+    private function tableHasColumn(string $table, string $column): bool
+    {
+        try {
+            $this->db->query("SHOW COLUMNS FROM {$table} LIKE :column_name");
+            $this->db->bind(':column_name', $column);
+            return (bool) $this->db->single();
+        } catch (Throwable $e) {
+            return false;
+        }
     }
 }

@@ -26,7 +26,13 @@
         <br>
 
         <strong>Campaign:</strong>
-        <?php echo htmlspecialchars($data['route']->campaign_name); ?>
+        <?php echo htmlspecialchars($data['route']->campaign_name . ' (' . $data['route']->campaign_month . '/' . $data['route']->campaign_year . ')'); ?>
+        <br>
+
+        <strong>Schedule:</strong>
+        <?php echo !empty($data['route']->schedule_id)
+            ? '#' . htmlspecialchars($data['route']->schedule_id) . ' - ' . htmlspecialchars($data['route']->schedule_status)
+            : 'Not linked'; ?>
         <br>
 
         <strong>Area:</strong>

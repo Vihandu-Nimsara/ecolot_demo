@@ -64,10 +64,12 @@
                 <thead>
                     <tr>
                         <th>Schedule ID</th>
+                        <th>Campaign</th>
                         <th>Postal Code</th>
                         <th>Area</th>
                         <th>Collection Date</th>
                         <th>Requests</th>
+                        <th>Capacity</th>
                         <th>Status</th>
                     </tr>
                 </thead>
@@ -76,13 +78,20 @@
                     <?php foreach ($data['upcoming_area_dates'] as $areaDate): ?>
                         <tr>
                             <td>SCH<?php echo htmlspecialchars(str_pad((string) $areaDate->date_id, 4, '0', STR_PAD_LEFT)); ?></td>
+                            <td>
+                                <?php if (!empty($areaDate->campaign_name)): ?>
+                                    <?php echo htmlspecialchars($areaDate->campaign_name); ?>
+                                    <br>
+                                    <small><?php echo htmlspecialchars($areaDate->campaign_month . '/' . $areaDate->campaign_year); ?></small>
+                                <?php else: ?>
+                                    <span class="muted">Not linked</span>
+                                <?php endif; ?>
+                            </td>
                             <td><?php echo htmlspecialchars($areaDate->postal_code); ?></td>
                             <td><?php echo htmlspecialchars($areaDate->area_name); ?></td>
                             <td><?php echo htmlspecialchars($areaDate->collection_date); ?></td>
-                            <td>
-                                <?php echo htmlspecialchars($areaDate->request_count); ?> /
-                                <?php echo htmlspecialchars($areaDate->max_requests); ?>
-                            </td>
+                            <td><?php echo htmlspecialchars($areaDate->request_count); ?></td>
+                            <td><?php echo htmlspecialchars($areaDate->max_requests); ?></td>
                             <td>
                                 <span class="status-badge">
                                     <?php echo htmlspecialchars($areaDate->status); ?>

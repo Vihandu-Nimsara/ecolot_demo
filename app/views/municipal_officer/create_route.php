@@ -3,7 +3,7 @@
         <div>
             <p class="page-kicker">09</p>
             <h1 class="page-title">Create Collection Route</h1>
-            <p class="page-subtitle">Assign approved requests to a collector, vehicle, area, and collection date.</p>
+            <p class="page-subtitle">Assign approved requests to a collector, vehicle, and selected area schedule.</p>
         </div>
     </div>
 
@@ -56,57 +56,53 @@
             <?php endif; ?>
         </div>
 
-        <div class="grid-2">
-            <div class="form-group">
-                <label for="route_name">Route Name</label>
-
-                <input
-                    type="text"
-                    id="route_name"
-                    name="route_name"
-                    value="<?php echo htmlspecialchars($data['old']['route_name'] ?? ''); ?>"
-                    placeholder="Example: Colombo 01 - Morning Route"
-                    required
-                >
-
-                <?php if (!empty($data['errors']['route_name'])): ?>
-                    <small class="error-text"><?php echo htmlspecialchars($data['errors']['route_name']); ?></small>
-                <?php endif; ?>
-            </div>
-
-            <div class="form-group">
-                <label for="collection_date">Collection Date</label>
-
-                <input
-                    type="date"
-                    id="collection_date"
-                    name="collection_date"
-                    value="<?php echo htmlspecialchars($data['old']['collection_date'] ?? ''); ?>"
-                    required
-                >
-
-                <?php if (!empty($data['errors']['collection_date'])): ?>
-                    <small class="error-text"><?php echo htmlspecialchars($data['errors']['collection_date']); ?></small>
-                <?php endif; ?>
-            </div>
-        </div>
-
         <div class="form-group">
-            <label for="area_id">Collection Area</label>
+            <label for="date_id">Area Collection Schedule</label>
 
-            <select id="area_id" name="area_id" required>
-                <option value="">Select area</option>
+            <select id="date_id" name="date_id" required>
+                <option value="">Select schedule</option>
 
-                <?php foreach ($data['areas'] as $area): ?>
-                    <option value="<?php echo htmlspecialchars($area->area_id); ?>"
-                        <?php echo ((int)($data['old']['area_id'] ?? 0) === (int)$area->area_id) ? 'selected' : ''; ?>>
-                        <?php echo htmlspecialchars($area->postal_code . ' - ' . $area->area_name); ?>
+                <?php foreach ($data['schedules'] as $schedule): ?>
+                    <option
+                        value="<?php echo htmlspecialchars($schedule->date_id); ?>"
+                        data-campaign-id="<?php echo htmlspecialchars($schedule->campaign_id ?? ''); ?>"
+                        <?php echo ((int)($data['old']['date_id'] ?? 0) === (int)$schedule->date_id) ? 'selected' : ''; ?>
+                    >
+                        <?php
+                            $campaignLabel = $schedule->campaign_name
+                                ? $schedule->campaign_name . ' - '
+                                : '';
+                            echo htmlspecialchars(
+                                $campaignLabel .
+                                $schedule->postal_code . ' - ' .
+                                $schedule->area_name . ' - ' .
+                                $schedule->collection_date . ' - ' .
+                                $schedule->status
+                            );
+                        ?>
                     </option>
                 <?php endforeach; ?>
             </select>
 
-            <?php if (!empty($data['errors']['area_id'])): ?>
-                <small class="error-text"><?php echo htmlspecialchars($data['errors']['area_id']); ?></small>
+            <?php if (!empty($data['errors']['date_id'])): ?>
+                <small class="error-text"><?php echo htmlspecialchars($data['errors']['date_id']); ?></small>
+            <?php endif; ?>
+        </div>
+
+        <div class="form-group">
+            <label for="route_name">Route Name</label>
+
+            <input
+                type="text"
+                id="route_name"
+                name="route_name"
+                value="<?php echo htmlspecialchars($data['old']['route_name'] ?? ''); ?>"
+                placeholder="Example: Colombo 01 - Morning Route"
+                required
+            >
+
+            <?php if (!empty($data['errors']['route_name'])): ?>
+                <small class="error-text"><?php echo htmlspecialchars($data['errors']['route_name']); ?></small>
             <?php endif; ?>
         </div>
 
@@ -155,7 +151,7 @@
         <h2>Approved Requests</h2>
 
         <p class="muted">
-            Select requests that match the same area and collection date. The system validates this again on the server.
+            Select approved requests for the selected schedule. The system validates this again on the server.
         </p>
 
         <div class="table-wrapper">
@@ -185,8 +181,7 @@
 
                         <tr
                             class="request-row"
-                            data-area-id="<?php echo htmlspecialchars($request->area_id); ?>"
-                            data-date="<?php echo htmlspecialchars($request->collection_date); ?>"
+                            data-date-id="<?php echo htmlspecialchars($request->preferred_date_id); ?>"
                         >
                             <td>
                                 <input
@@ -237,31 +232,34 @@
 </section>
 
 <script>
-    const areaSelect = document.getElementById('area_id');
-    const dateInput = document.getElementById('collection_date');
+    const campaignSelect = document.getElementById('campaign_id');
+    const scheduleSelect = document.getElementById('date_id');
 
     function filterRequestRows() {
-        const selectedArea = areaSelect.value;
-        const selectedDate = dateInput.value;
+        const selectedCampaign = campaignSelect.value;
+        const selectedSchedule = scheduleSelect.value;
 
         document.querySelectorAll('.request-row').forEach(row => {
-            const rowArea = row.dataset.areaId;
-            const rowDate = row.dataset.date;
+            const rowDateId = row.dataset.dateId;
             const checkbox = row.querySelector('input[type="checkbox"]');
 
-            const areaMatches = selectedArea === '' || rowArea === selectedArea;
-            const dateMatches = selectedDate === '' || rowDate === selectedDate;
+            const scheduleMatches = selectedSchedule === '' || rowDateId === selectedSchedule;
 
-            if (areaMatches && dateMatches) {
+            if (scheduleMatches) {
                 row.style.display = '';
             } else {
                 row.style.display = 'none';
                 checkbox.checked = false;
             }
         });
+
+        document.querySelectorAll('#date_id option').forEach(option => {
+            const optionCampaign = option.dataset.campaignId || '';
+            option.hidden = selectedCampaign !== '' && optionCampaign !== '' && optionCampaign !== selectedCampaign;
+        });
     }
 
-    areaSelect.addEventListener('change', filterRequestRows);
-    dateInput.addEventListener('change', filterRequestRows);
+    campaignSelect.addEventListener('change', filterRequestRows);
+    scheduleSelect.addEventListener('change', filterRequestRows);
     filterRequestRows();
 </script>

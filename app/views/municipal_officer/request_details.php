@@ -31,6 +31,20 @@
         <?php echo htmlspecialchars($data['request']->status); ?>
         <br>
 
+        <strong>Campaign:</strong>
+        <?php if (!empty($data['request']->campaign_name)): ?>
+            <?php echo htmlspecialchars($data['request']->campaign_name . ' (' . $data['request']->campaign_month . '/' . $data['request']->campaign_year . ')'); ?>
+            |
+            Cut-off: <?php echo htmlspecialchars($data['request']->request_cutoff_date ?? '-'); ?>
+        <?php else: ?>
+            Not linked
+        <?php endif; ?>
+        <br>
+
+        <strong>Schedule:</strong>
+        #<?php echo htmlspecialchars($data['request']->date_id); ?>
+        <br>
+
         <strong>Collection Date:</strong>
         <?php echo htmlspecialchars($data['request']->collection_date); ?>
         <br>

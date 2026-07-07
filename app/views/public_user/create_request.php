@@ -37,7 +37,17 @@
                 <?php foreach ($data['dates'] as $date): ?>
                     <option value="<?php echo htmlspecialchars($date->date_id); ?>"
                         <?php echo ((int)($data['old']['preferred_date_id'] ?? 0) === (int)$date->date_id) ? 'selected' : ''; ?>>
-                        <?php echo htmlspecialchars($date->collection_date); ?>
+                        <?php
+                            $campaignLabel = !empty($date->campaign_name)
+                                ? $date->campaign_name . ' - '
+                                : '';
+                            echo htmlspecialchars(
+                                $campaignLabel .
+                                $date->collection_date .
+                                ' | Slots: ' .
+                                ((int) $date->request_count) . '/' . ((int) $date->max_requests)
+                            );
+                        ?>
                     </option>
                 <?php endforeach; ?>
             </select>

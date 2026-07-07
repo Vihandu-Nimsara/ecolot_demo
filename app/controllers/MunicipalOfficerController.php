@@ -451,16 +451,26 @@ private function normalizeDateTimeLocal(string $value): ?string
             $filterStatus = null;
         }
 
-        $requests = $this->municipalModel->getRequestsForCouncil(
-            (int) $profile->council_id,
-            $filterStatus
-        );
+        $councilId = (int) $profile->council_id;
+        $filters = [
+            'campaign_id' => (int) ($_GET['campaign_id'] ?? 0),
+            'area_id' => (int) ($_GET['area_id'] ?? 0),
+            'date_id' => (int) ($_GET['date_id'] ?? 0),
+            'search' => trim($_GET['search'] ?? '')
+        ];
+
+        $requests = $this->municipalModel->getRequestsForCouncil($councilId, $filterStatus, $filters);
 
         $this->view('municipal_officer/requests', [
             'title' => 'Review Requests',
             'profile' => $profile,
             'requests' => $requests,
-            'current_status' => $filterStatus ?? 'ALL'
+            'current_status' => $filterStatus ?? 'ALL',
+            'filters' => $filters,
+            'campaigns' => $this->municipalModel->getCampaignsForCouncil($councilId),
+            'areas' => $this->municipalModel->getAreasForCouncil($councilId),
+            'schedules' => $this->municipalModel->getScheduleOptionsForCouncil($councilId),
+            'supports_schedule_campaigns' => $this->municipalModel->supportsScheduleCampaigns()
         ]);
     }
 
@@ -587,9 +597,12 @@ private function normalizeDateTimeLocal(string $value): ?string
             'title' => 'Area Collection Schedule',
             'profile' => $profile,
             'area_dates' => $this->municipalModel->getAreaCollectionDatesForCouncil($councilId),
+            'campaigns' => $this->municipalModel->getCampaignOptions($councilId),
             'areas' => $this->municipalModel->getAreasForCouncil($councilId),
+            'supports_schedule_campaigns' => $this->municipalModel->supportsScheduleCampaigns(),
             'errors' => [],
             'old' => [
+                'campaign_id' => '',
                 'area_id' => '',
                 'collection_date' => '',
                 'max_requests' => 100,
@@ -616,6 +629,7 @@ private function normalizeDateTimeLocal(string $value): ?string
         $councilId = (int) $profile->council_id;
 
         $old = [
+            'campaign_id' => (int) ($_POST['campaign_id'] ?? 0),
             'area_id' => (int) ($_POST['area_id'] ?? 0),
             'collection_date' => trim($_POST['collection_date'] ?? ''),
             'max_requests' => (int) ($_POST['max_requests'] ?? 100),
@@ -629,7 +643,9 @@ private function normalizeDateTimeLocal(string $value): ?string
                 'title' => 'Area Collection Schedule',
                 'profile' => $profile,
                 'area_dates' => $this->municipalModel->getAreaCollectionDatesForCouncil($councilId),
+                'campaigns' => $this->municipalModel->getCampaignOptions($councilId),
                 'areas' => $this->municipalModel->getAreasForCouncil($councilId),
+                'supports_schedule_campaigns' => $this->municipalModel->supportsScheduleCampaigns(),
                 'errors' => $errors,
                 'old' => $old
             ]);
@@ -789,16 +805,15 @@ private function normalizeDateTimeLocal(string $value): ?string
             'title' => 'Create Collection Route',
             'profile' => $profile,
             'campaigns' => $this->municipalModel->getCampaignOptions((int) $profile->council_id),
-            'areas' => $this->municipalModel->getAreasForCouncil((int) $profile->council_id),
+            'schedules' => $this->municipalModel->getScheduleOptionsForCouncil((int) $profile->council_id),
             'collectors' => $this->municipalModel->getCollectorsForCouncil((int) $profile->council_id),
             'vehicles' => $this->municipalModel->getVehiclesForCouncil((int) $profile->council_id),
             'approved_requests' => $this->municipalModel->getApprovedRequestsForRoutePlanning((int) $profile->council_id),
             'errors' => [],
             'old' => [
                 'campaign_id' => '',
-                'area_id' => '',
+                'date_id' => '',
                 'route_name' => '',
-                'collection_date' => '',
                 'collector_id' => '',
                 'vehicle_id' => '',
                 'request_ids' => []
@@ -820,9 +835,8 @@ private function normalizeDateTimeLocal(string $value): ?string
 
         $old = [
             'campaign_id' => (int) ($_POST['campaign_id'] ?? 0),
-            'area_id' => (int) ($_POST['area_id'] ?? 0),
+            'date_id' => (int) ($_POST['date_id'] ?? 0),
             'route_name' => trim($_POST['route_name'] ?? ''),
-            'collection_date' => trim($_POST['collection_date'] ?? ''),
             'collector_id' => (int) ($_POST['collector_id'] ?? 0),
             'vehicle_id' => (int) ($_POST['vehicle_id'] ?? 0),
             'request_ids' => $_POST['request_ids'] ?? []
@@ -835,10 +849,10 @@ private function normalizeDateTimeLocal(string $value): ?string
                 'title' => 'Create Collection Route',
                 'profile' => $profile,
                 'campaigns' => $this->municipalModel->getCampaignOptions($councilId),
-                'areas' => $this->municipalModel->getAreasForCouncil($councilId),
+                'schedules' => $this->municipalModel->getScheduleOptionsForCouncil($councilId),
                 'collectors' => $this->municipalModel->getCollectorsForCouncil($councilId),
                 'vehicles' => $this->municipalModel->getVehiclesForCouncil($councilId),
-                'approved_requests' => $this->municipalModel->getApprovedRequestsForRoutePlanning($councilId),
+                'approved_requests' => $this->municipalModel->getApprovedRequestsForRoutePlanning($councilId, $old['date_id'] ?: null),
                 'errors' => $errors,
                 'old' => $old
             ]);
@@ -846,12 +860,14 @@ private function normalizeDateTimeLocal(string $value): ?string
         }
 
         $requestIds = array_values(array_unique(array_map('intval', $old['request_ids'])));
+        $schedule = $this->municipalModel->findScheduleForCouncil($old['date_id'], $councilId);
 
         $created = $this->municipalModel->createRouteWithStops([
-            'campaign_id' => $old['campaign_id'],
-            'area_id' => $old['area_id'],
+            'campaign_id' => (int) $schedule->campaign_id ?: $old['campaign_id'],
+            'area_id' => (int) $schedule->area_id,
+            'date_id' => $old['date_id'],
             'route_name' => $old['route_name'],
-            'collection_date' => $old['collection_date'],
+            'collection_date' => $schedule->collection_date,
             'collector_id' => $old['collector_id'],
             'vehicle_id' => $old['vehicle_id'],
             'request_ids' => $requestIds,
@@ -863,10 +879,10 @@ private function normalizeDateTimeLocal(string $value): ?string
                 'title' => 'Create Collection Route',
                 'profile' => $profile,
                 'campaigns' => $this->municipalModel->getCampaignOptions($councilId),
-                'areas' => $this->municipalModel->getAreasForCouncil($councilId),
+                'schedules' => $this->municipalModel->getScheduleOptionsForCouncil($councilId),
                 'collectors' => $this->municipalModel->getCollectorsForCouncil($councilId),
                 'vehicles' => $this->municipalModel->getVehiclesForCouncil($councilId),
-                'approved_requests' => $this->municipalModel->getApprovedRequestsForRoutePlanning($councilId),
+                'approved_requests' => $this->municipalModel->getApprovedRequestsForRoutePlanning($councilId, $old['date_id'] ?: null),
                 'errors' => ['route' => 'Failed to create route. Please try again.'],
                 'old' => $old
             ]);
@@ -1251,20 +1267,18 @@ public function profile(): void
             $errors['route_name'] = 'Route name is required.';
         }
 
-        if (empty($data['collection_date'])) {
-            $errors['collection_date'] = 'Collection date is required.';
-        }
-
         $campaign = $this->municipalModel->findCampaignForCouncil($data['campaign_id'], $councilId);
 
         if (!$campaign) {
             $errors['campaign_id'] = 'Please select a valid campaign.';
         }
 
-        $area = $this->municipalModel->findAreaForCouncil($data['area_id'], $councilId);
+        $schedule = $this->municipalModel->findScheduleForCouncil((int) ($data['date_id'] ?? 0), $councilId);
 
-        if (!$area) {
-            $errors['area_id'] = 'Please select a valid area.';
+        if (!$schedule) {
+            $errors['date_id'] = 'Please select a valid area collection schedule.';
+        } elseif ($campaign && !empty($schedule->campaign_id) && (int) $schedule->campaign_id !== (int) $campaign->campaign_id) {
+            $errors['date_id'] = 'Selected schedule must belong to the selected campaign.';
         }
 
         $collector = $this->municipalModel->findCollectorForCouncil($data['collector_id'], $councilId);
@@ -1286,16 +1300,15 @@ public function profile(): void
             return $errors;
         }
 
-        if (!empty($data['collection_date']) && $area) {
+        if ($schedule) {
             $validRequests = $this->municipalModel->validateApprovedRequestsForRoute(
                 $requestIds,
                 $councilId,
-                $data['area_id'],
-                $data['collection_date']
+                (int) $schedule->date_id
             );
 
             if (count($validRequests) !== count($requestIds)) {
-                $errors['request_ids'] = 'Selected requests must be approved, unassigned, and match the selected area and collection date.';
+                $errors['request_ids'] = 'Selected requests must be approved, unassigned, and match the selected schedule.';
             }
         }
 
@@ -1305,6 +1318,10 @@ public function profile(): void
     private function validateAreaDate(array $data, int $councilId): array
     {
         $errors = [];
+
+        if (!$this->municipalModel->findCampaignForCouncil((int) ($data['campaign_id'] ?? 0), $councilId)) {
+            $errors['campaign_id'] = 'Please select a valid council campaign.';
+        }
 
         if (!$this->municipalModel->findAreaForCouncil((int) $data['area_id'], $councilId)) {
             $errors['area_id'] = 'Please select a valid council area.';
@@ -1322,6 +1339,10 @@ public function profile(): void
 
         if (!in_array($data['status'], ['OPEN', 'CLOSED', 'FULL', 'CANCELLED'], true)) {
             $errors['status'] = 'Invalid schedule status.';
+        }
+
+        if (empty($errors) && $this->municipalModel->areaCollectionDateExists($data, $councilId)) {
+            $errors['collection_date'] = 'A schedule already exists for this campaign, area, and date.';
         }
 
         return $errors;
