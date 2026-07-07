@@ -1,3 +1,11 @@
+-- EcoLot LK updated runnable schema
+-- Based on the uploaded SQL, edited for latest workflow compatibility.
+-- Main additions:
+-- 1) area_collection_dates.campaign_id for campaign-wise area schedules.
+-- 2) collection_routes.date_id for exact schedule/date traceability.
+-- 3) indexes and uniqueness constraints for route/request and E-Lot item consistency.
+-- NOTE: This script DROPS and recreates the ecolot_lk database.
+
 DROP DATABASE IF EXISTS ecolot_lk;
 CREATE DATABASE ecolot_lk CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE ecolot_lk;
@@ -59,16 +67,43 @@ CREATE TABLE collection_areas (
         ON DELETE CASCADE
 );
 
+-- Monthly campaigns are defined before area schedules because
+-- area_collection_dates.campaign_id references collection_campaigns.
+CREATE TABLE collection_campaigns (
+    campaign_id INT AUTO_INCREMENT PRIMARY KEY,
+    council_id INT NOT NULL,
+    campaign_name VARCHAR(150) NOT NULL,
+    campaign_month TINYINT NOT NULL,
+    campaign_year YEAR NOT NULL,
+    request_cutoff_date DATE NOT NULL,
+    status ENUM('DRAFT', 'OPEN', 'CLOSED', 'COMPLETED', 'CANCELLED') DEFAULT 'DRAFT',
+    created_by INT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (council_id) REFERENCES local_councils(council_id)
+        ON DELETE CASCADE,
+    FOREIGN KEY (created_by) REFERENCES users(user_id)
+        ON DELETE CASCADE,
+    UNIQUE (council_id, campaign_month, campaign_year),
+    INDEX idx_collection_campaigns_council_status (council_id, status),
+    INDEX idx_collection_campaigns_month_year (campaign_month, campaign_year)
+);
+
 CREATE TABLE area_collection_dates (
     date_id INT AUTO_INCREMENT PRIMARY KEY,
     area_id INT NOT NULL,
+    campaign_id INT NULL,
     collection_date DATE NOT NULL,
     max_requests INT DEFAULT 100,
     status ENUM('OPEN', 'CLOSED', 'FULL', 'CANCELLED') DEFAULT 'OPEN',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (area_id) REFERENCES collection_areas(area_id)
         ON DELETE CASCADE,
-    UNIQUE (area_id, collection_date)
+    FOREIGN KEY (campaign_id) REFERENCES collection_campaigns(campaign_id)
+        ON DELETE CASCADE,
+    UNIQUE (campaign_id, area_id, collection_date),
+    INDEX idx_area_collection_dates_campaign (campaign_id),
+    INDEX idx_area_collection_dates_area_date (area_id, collection_date),
+    INDEX idx_area_collection_dates_status (status)
 );
 
 -- =========================================================
@@ -227,7 +262,10 @@ CREATE TABLE ewaste_requests (
     FOREIGN KEY (area_id) REFERENCES collection_areas(area_id)
         ON DELETE CASCADE,
     FOREIGN KEY (preferred_date_id) REFERENCES area_collection_dates(date_id)
-        ON DELETE CASCADE
+        ON DELETE CASCADE,
+    INDEX idx_ewaste_requests_preferred_date (preferred_date_id),
+    INDEX idx_ewaste_requests_area_status (area_id, status),
+    INDEX idx_ewaste_requests_public_user (public_user_id)
 );
 
 CREATE TABLE request_items (
@@ -276,29 +314,14 @@ CREATE TABLE complaints_feedback (
 );
 
 -- =========================================================
--- 07. MONTHLY CAMPAIGNS + ROUTES
+-- 07. ROUTES
 -- =========================================================
-
-CREATE TABLE collection_campaigns (
-    campaign_id INT AUTO_INCREMENT PRIMARY KEY,
-    council_id INT NOT NULL,
-    campaign_name VARCHAR(150) NOT NULL,
-    campaign_month TINYINT NOT NULL,
-    campaign_year YEAR NOT NULL,
-    request_cutoff_date DATE NOT NULL,
-    status ENUM('DRAFT', 'OPEN', 'CLOSED', 'COMPLETED', 'CANCELLED') DEFAULT 'DRAFT',
-    created_by INT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (council_id) REFERENCES local_councils(council_id)
-        ON DELETE CASCADE,
-    FOREIGN KEY (created_by) REFERENCES users(user_id)
-        ON DELETE CASCADE
-);
 
 CREATE TABLE collection_routes (
     route_id INT AUTO_INCREMENT PRIMARY KEY,
     campaign_id INT NOT NULL,
     area_id INT NOT NULL,
+    date_id INT NULL,
     route_name VARCHAR(150) NOT NULL,
     collection_date DATE NOT NULL,
     collector_id INT NULL,
@@ -309,10 +332,15 @@ CREATE TABLE collection_routes (
         ON DELETE CASCADE,
     FOREIGN KEY (area_id) REFERENCES collection_areas(area_id)
         ON DELETE CASCADE,
+    FOREIGN KEY (date_id) REFERENCES area_collection_dates(date_id)
+        ON DELETE SET NULL,
     FOREIGN KEY (collector_id) REFERENCES users(user_id)
         ON DELETE SET NULL,
     FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
-        ON DELETE SET NULL
+        ON DELETE SET NULL,
+    INDEX idx_collection_routes_date_id (date_id),
+    INDEX idx_collection_routes_campaign_area_date (campaign_id, area_id, collection_date),
+    INDEX idx_collection_routes_status (status)
 );
 
 CREATE TABLE route_stops (
@@ -327,7 +355,9 @@ CREATE TABLE route_stops (
         ON DELETE CASCADE,
     FOREIGN KEY (request_id) REFERENCES ewaste_requests(request_id)
         ON DELETE CASCADE,
-    UNIQUE (route_id, request_id)
+    UNIQUE (route_id, request_id),
+    UNIQUE (request_id),
+    INDEX idx_route_stops_route_status (route_id, stop_status)
 );
 
 -- =========================================================
@@ -354,7 +384,10 @@ CREATE TABLE pickup_records (
     FOREIGN KEY (collector_id) REFERENCES users(user_id)
         ON DELETE CASCADE,
     FOREIGN KEY (verified_by) REFERENCES users(user_id)
-        ON DELETE SET NULL
+        ON DELETE SET NULL,
+    INDEX idx_pickup_records_verification_status (verification_status),
+    INDEX idx_pickup_records_route_id (route_id),
+    INDEX idx_pickup_records_request_id (request_id)
 );
 
 CREATE TABLE pickup_items (
@@ -441,7 +474,8 @@ CREATE TABLE elot_items (
         ON DELETE CASCADE,
     FOREIGN KEY (pickup_item_id) REFERENCES pickup_items(pickup_item_id)
         ON DELETE CASCADE,
-    UNIQUE (elot_id, pickup_item_id)
+    UNIQUE (elot_id, pickup_item_id),
+    UNIQUE (pickup_item_id)
 );
 
 CREATE TABLE bids (
@@ -513,14 +547,16 @@ VALUES
 (1, 'Colombo 03 Area', '00300'),
 (1, 'Colombo 04 Area', '00400');
 
-INSERT INTO area_collection_dates (area_id, collection_date, max_requests, status)
+-- Basic reference schedules are left without campaign_id for compatibility.
+-- The latest logical massive bundle will create campaign-linked schedules.
+INSERT INTO area_collection_dates (area_id, campaign_id, collection_date, max_requests, status)
 VALUES
-(1, '2026-08-05', 50, 'OPEN'),
-(1, '2026-08-20', 50, 'OPEN'),
-(2, '2026-08-07', 50, 'OPEN'),
-(2, '2026-08-22', 50, 'OPEN'),
-(3, '2026-08-10', 50, 'OPEN'),
-(4, '2026-08-12', 50, 'OPEN');
+(1, NULL, '2026-08-05', 50, 'OPEN'),
+(1, NULL, '2026-08-20', 50, 'OPEN'),
+(2, NULL, '2026-08-07', 50, 'OPEN'),
+(2, NULL, '2026-08-22', 50, 'OPEN'),
+(3, NULL, '2026-08-10', 50, 'OPEN'),
+(4, NULL, '2026-08-12', 50, 'OPEN');
 
 INSERT INTO ewaste_categories (category_name, description)
 VALUES
